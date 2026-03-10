@@ -5,6 +5,8 @@ vendor/
 # 构建输出
 dist/
 build/
+target/
+**/target/
 *.tgz
 *.tar.gz
 
