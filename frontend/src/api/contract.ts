@@ -25,6 +25,8 @@ export interface Contract {
 export interface ContractQueryParams {
   page?: number;
   size?: number;
+  keyword?: string;
+  customerName?: string;
   contractNo?: string;
   contractName?: string;
   contractType?: string;

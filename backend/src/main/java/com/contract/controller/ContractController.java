@@ -31,13 +31,18 @@ public class ContractController {
     private ContractImportService contractImportService;
 
     @GetMapping
-    public ResponseEntity<?> getContracts(@RequestParam(defaultValue = "1") int page,
-                                          @RequestParam(defaultValue = "10") int size) {
+    public ResponseEntity<?> getContracts(@RequestParam(defaultValue = "1", name = "page") int page,
+                                          @RequestParam(defaultValue = "10", name = "size") int size,
+                                          @RequestParam(required = false, name = "keyword") String keyword,
+                                          @RequestParam(required = false, name = "customerName") String customerName,
+                                          @RequestParam(required = false, name = "status") String status,
+                                          @RequestParam(required = false, name = "startDate") String startDate,
+                                          @RequestParam(required = false, name = "endDate") String endDate) {
         int safePage = Math.max(page, 1);
         int safeSize = Math.max(size, 1);
         int offset = (safePage - 1) * safeSize;
 
-        String listSql = """
+        StringBuilder listSql = new StringBuilder("""
                 SELECT c.id,
                        c.id AS contractId,
                        c.contract_no AS contractNo,
@@ -61,12 +66,63 @@ public class ContractController {
                            ELSE 'draft'
                        END AS status
                 FROM contracts c
-                ORDER BY c.id DESC
-                LIMIT ? OFFSET ?
-                """;
-        List<Map<String, Object>> records = jdbcTemplate.queryForList(listSql, safeSize, offset);
+                WHERE 1=1
+                """);
+        List<Object> params = new ArrayList<>();
+        if (!isBlank(keyword)) {
+            listSql.append(" AND (c.contract_no LIKE ? OR c.contract_name LIKE ? OR c.party_a LIKE ?)");
+            String likeKeyword = "%" + keyword.trim() + "%";
+            params.add(likeKeyword);
+            params.add(likeKeyword);
+            params.add(likeKeyword);
+        }
+        if (!isBlank(customerName)) {
+            listSql.append(" AND c.party_a LIKE ?");
+            params.add("%" + customerName.trim() + "%");
+        }
+        if (!isBlank(status)) {
+            listSql.append(" AND c.status = ?");
+            params.add(toContractDbStatus(status));
+        }
+        if (!isBlank(startDate)) {
+            listSql.append(" AND c.start_date >= ?");
+            params.add(startDate);
+        }
+        if (!isBlank(endDate)) {
+            listSql.append(" AND c.end_date <= ?");
+            params.add(endDate);
+        }
+        listSql.append(" ORDER BY c.id DESC LIMIT ? OFFSET ?");
+        params.add(safeSize);
+        params.add(offset);
+        List<Map<String, Object>> records = jdbcTemplate.queryForList(listSql.toString(), params.toArray());
 
-        Long total = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM contracts", Long.class);
+        StringBuilder countSql = new StringBuilder("SELECT COUNT(*) FROM contracts c WHERE 1=1");
+        List<Object> countParams = new ArrayList<>();
+        if (!isBlank(keyword)) {
+            countSql.append(" AND (c.contract_no LIKE ? OR c.contract_name LIKE ? OR c.party_a LIKE ?)");
+            String likeKeyword = "%" + keyword.trim() + "%";
+            countParams.add(likeKeyword);
+            countParams.add(likeKeyword);
+            countParams.add(likeKeyword);
+        }
+        if (!isBlank(customerName)) {
+            countSql.append(" AND c.party_a LIKE ?");
+            countParams.add("%" + customerName.trim() + "%");
+        }
+        if (!isBlank(status)) {
+            countSql.append(" AND c.status = ?");
+            countParams.add(toContractDbStatus(status));
+        }
+        if (!isBlank(startDate)) {
+            countSql.append(" AND c.start_date >= ?");
+            countParams.add(startDate);
+        }
+        if (!isBlank(endDate)) {
+            countSql.append(" AND c.end_date <= ?");
+            countParams.add(endDate);
+        }
+        Long total = jdbcTemplate.queryForObject(countSql.toString(), Long.class, countParams.toArray());
         Map<String, Object> result = new HashMap<>();
         result.put("records", records);
         result.put("total", total == null ? 0 : total);

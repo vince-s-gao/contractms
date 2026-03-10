@@ -12,6 +12,13 @@
           />
         </el-col>
         <el-col :span="4">
+          <el-input
+            v-model="searchParams.customerName"
+            placeholder="客户名称（模糊搜索）"
+            clearable
+          />
+        </el-col>
+        <el-col :span="4">
           <el-select
             v-model="searchParams.status"
             placeholder="合同状态"
@@ -226,6 +233,7 @@ interface Contract {
 
 interface SearchParams {
   keyword: string;
+  customerName: string;
   status: string;
   dateRange: string[];
 }
@@ -246,6 +254,7 @@ const router = useRouter();
 const contractList = ref<Contract[]>([]);
 const searchParams = reactive<SearchParams>({
   keyword: "",
+  customerName: "",
   status: "",
   dateRange: [],
 });
@@ -324,18 +333,33 @@ const loadContractList = async () => {
   loading.value = true;
 
   try {
+    const query = new URLSearchParams({
+      page: String(pagination.current),
+      size: String(pagination.size),
+    });
+    if (searchParams.keyword) {
+      query.append("keyword", searchParams.keyword);
+    }
+    if (searchParams.customerName) {
+      query.append("customerName", searchParams.customerName);
+    }
+    if (searchParams.status) {
+      query.append("status", searchParams.status);
+    }
+    if (searchParams.dateRange?.length === 2) {
+      query.append("startDate", searchParams.dateRange[0]);
+      query.append("endDate", searchParams.dateRange[1]);
+    }
+
     // 调用真实API获取合同列表
     const token = localStorage.getItem("token");
-    const response = await fetch(
-      `/api/contracts?page=${pagination.current}&size=${pagination.size}`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
+    const response = await fetch(`/api/contracts?${query.toString()}`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
       },
-    );
+    });
 
     if (response.status === 401) {
       // 未授权，跳转到登录页
@@ -371,6 +395,7 @@ const handleSearch = () => {
 
 const handleReset = () => {
   searchParams.keyword = "";
+  searchParams.customerName = "";
   searchParams.status = "";
   searchParams.dateRange = [];
   pagination.current = 1;
