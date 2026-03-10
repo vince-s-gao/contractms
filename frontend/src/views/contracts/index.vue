@@ -18,7 +18,14 @@
             clearable
           />
         </el-col>
-        <el-col :span="4">
+        <el-col :span="3">
+          <el-input
+            v-model="searchParams.signingYear"
+            placeholder="签约年份"
+            clearable
+          />
+        </el-col>
+        <el-col :span="3">
           <el-select
             v-model="searchParams.status"
             placeholder="合同状态"
@@ -56,6 +63,9 @@
             <el-icon><Plus /></el-icon>
             新建合同
           </el-button>
+          <el-button type="info" plain @click="handleOpenTypeManage">
+            合同类型管理
+          </el-button>
         </el-col>
       </el-row>
     </div>
@@ -70,6 +80,7 @@
       >
         <el-table-column type="selection" width="55" />
         <el-table-column prop="contractNumber" label="合同编号" width="120" />
+        <el-table-column prop="signingYear" label="签约年份" width="100" />
         <el-table-column prop="contractName" label="合同名称" min-width="200" />
         <el-table-column prop="customerName" label="客户名称" min-width="160" />
         <el-table-column
@@ -79,7 +90,7 @@
         />
         <el-table-column prop="contractType" label="合同类型" width="100">
           <template #default="{ row }">
-            <el-tag>{{ row.contractType }}</el-tag>
+            <el-tag>{{ getContractTypeLabel(row.contractType) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="amount" label="合同金额" width="120">
@@ -98,7 +109,7 @@
         <el-table-column prop="endDate" label="结束日期" width="120" />
         <el-table-column prop="createdBy" label="创建人" width="100" />
         <el-table-column prop="createdAt" label="创建时间" width="180" />
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="handleView(row)"
               >查看</el-button
@@ -148,6 +159,37 @@
       :contract-data="currentContract"
       @success="handleFormSuccess"
     />
+
+    <el-dialog
+      v-model="typeManageDialogVisible"
+      title="合同类型管理"
+      width="760px"
+      :close-on-click-modal="false"
+    >
+      <div class="type-manage-form">
+        <el-input
+          v-model="typeForm.code"
+          :disabled="!!editingTypeCode"
+          placeholder="类型编码（如：RENTAL）"
+        />
+        <el-input v-model="typeForm.name" placeholder="类型名称（如：租赁合同）" />
+        <el-button type="primary" :loading="typeManageLoading" @click="handleSaveType">
+          {{ editingTypeCode ? "保存修改" : "新增类型" }}
+        </el-button>
+        <el-button v-if="editingTypeCode" @click="resetTypeForm">取消编辑</el-button>
+      </div>
+
+      <el-table :data="contractTypeList" border>
+        <el-table-column prop="code" label="类型编码" min-width="180" />
+        <el-table-column prop="name" label="类型名称" min-width="180" />
+        <el-table-column label="操作" width="160">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="handleEditType(row)">编辑</el-button>
+            <el-button link type="danger" @click="handleDeleteType(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
 
     <el-dialog
       v-model="exportDialogVisible"
@@ -209,16 +251,25 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from "vue";
+import { ref, reactive, onMounted, computed } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox, type UploadFile, type UploadRawFile } from "element-plus";
-import { exportContracts, importContracts } from "@/api/contract";
+import {
+  createContractType,
+  deleteContractType,
+  exportContracts,
+  getContractTypes,
+  importContracts,
+  updateContractType,
+  type ContractTypeItem,
+} from "@/api/contract";
 import ContractDetailDialog from "./components/ContractDetailDialog.vue";
 import ContractFormDialog from "./components/ContractFormDialog.vue";
 
 interface Contract {
   id: string;
   contractNumber: string;
+  signingYear?: number;
   contractName: string;
   customerName?: string;
   companySignatory?: string;
@@ -234,6 +285,7 @@ interface Contract {
 interface SearchParams {
   keyword: string;
   customerName: string;
+  signingYear: string;
   status: string;
   dateRange: string[];
 }
@@ -249,12 +301,18 @@ interface ExportFieldOption {
   value: string;
 }
 
+interface ContractTypeForm {
+  code: string;
+  name: string;
+}
+
 const loading = ref(false);
 const router = useRouter();
 const contractList = ref<Contract[]>([]);
 const searchParams = reactive<SearchParams>({
   keyword: "",
   customerName: "",
+  signingYear: "",
   status: "",
   dateRange: [],
 });
@@ -276,8 +334,29 @@ const importLoading = ref(false);
 const importOverwrite = ref(false);
 const importFileList = ref<UploadFile[]>([]);
 const importRawFile = ref<UploadRawFile | null>(null);
+const typeManageDialogVisible = ref(false);
+const typeManageLoading = ref(false);
+const defaultContractTypeList: ContractTypeItem[] = [
+  { code: "SALES", name: "销售合同" },
+  { code: "PURCHASE", name: "采购合同" },
+  { code: "SERVICE", name: "服务合同" },
+  { code: "OTHER", name: "其他" },
+];
+const contractTypeList = ref<ContractTypeItem[]>([...defaultContractTypeList]);
+const editingTypeCode = ref("");
+const typeForm = reactive<ContractTypeForm>({
+  code: "",
+  name: "",
+});
+const contractTypeOptions = computed(() =>
+  contractTypeList.value.map((item) => ({
+    label: item.name,
+    value: item.code,
+  })),
+);
 const exportFieldOptions: ExportFieldOption[] = [
   { label: "合同编号", value: "contractNo" },
+  { label: "签约年份", value: "signingYear" },
   { label: "合同名称", value: "contractName" },
   { label: "客户名称", value: "customerName" },
   { label: "公司签约主体", value: "companySignatory" },
@@ -326,8 +405,23 @@ const mockContracts: Contract[] = [
 ];
 
 onMounted(() => {
+  loadContractTypeList();
   loadContractList();
 });
+
+const loadContractTypeList = async () => {
+  try {
+    const response = await getContractTypes();
+    contractTypeList.value = response.records || response.data?.records || [];
+    return true;
+  } catch (error) {
+    console.error("加载合同类型失败:", error);
+    if (!contractTypeList.value.length) {
+      contractTypeList.value = [...defaultContractTypeList];
+    }
+    return false;
+  }
+};
 
 const loadContractList = async () => {
   loading.value = true;
@@ -342,6 +436,9 @@ const loadContractList = async () => {
     }
     if (searchParams.customerName) {
       query.append("customerName", searchParams.customerName);
+    }
+    if (searchParams.signingYear) {
+      query.append("signingYear", searchParams.signingYear.trim());
     }
     if (searchParams.status) {
       query.append("status", searchParams.status);
@@ -396,6 +493,7 @@ const handleSearch = () => {
 const handleReset = () => {
   searchParams.keyword = "";
   searchParams.customerName = "";
+  searchParams.signingYear = "";
   searchParams.status = "";
   searchParams.dateRange = [];
   pagination.current = 1;
@@ -405,6 +503,12 @@ const handleReset = () => {
 const handleCreate = () => {
   currentContract.value = null;
   formDialogVisible.value = true;
+};
+
+const handleOpenTypeManage = async () => {
+  await loadContractTypeList();
+  resetTypeForm();
+  typeManageDialogVisible.value = true;
 };
 
 const handleOpenExport = () => {
@@ -537,12 +641,124 @@ const handleDelete = async (row: Contract) => {
       },
     );
 
-    // 模拟删除操作
+    const token = localStorage.getItem("token");
+    const response = await fetch(`/api/contracts/${row.id}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (response.status === 401) {
+      ElMessage.error("登录已过期，请重新登录");
+      localStorage.removeItem("token");
+      localStorage.removeItem("userInfo");
+      router.push("/login");
+      return;
+    }
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || "删除失败");
+    }
+
     ElMessage.success("删除成功");
-    loadContractList();
-  } catch {
-    // 用户取消操作
+    await loadContractList();
+  } catch (error: any) {
+    if (error === "cancel" || error === "close") {
+      return;
+    }
+    console.error("删除合同失败:", error);
+    ElMessage.error(error?.message || "删除合同失败");
   }
+};
+
+const resetTypeForm = () => {
+  editingTypeCode.value = "";
+  typeForm.code = "";
+  typeForm.name = "";
+};
+
+const handleEditType = (row: ContractTypeItem) => {
+  editingTypeCode.value = row.code;
+  typeForm.code = row.code;
+  typeForm.name = row.name;
+};
+
+const handleSaveType = async () => {
+  if (typeManageLoading.value) {
+    return;
+  }
+  const code = typeForm.code.trim().toUpperCase();
+  const name = typeForm.name.trim();
+  if (!code) {
+    ElMessage.warning("请输入类型编码");
+    return;
+  }
+  if (!/^[A-Z0-9_]{2,50}$/.test(code)) {
+    ElMessage.warning("类型编码仅支持2-50位大写字母、数字、下划线");
+    return;
+  }
+  if (!name) {
+    ElMessage.warning("请输入类型名称");
+    return;
+  }
+
+  typeManageLoading.value = true;
+  try {
+    if (editingTypeCode.value) {
+      await updateContractType(editingTypeCode.value, { code, name });
+      ElMessage.success("合同类型更新成功");
+    } else {
+      await createContractType({ code, name });
+      ElMessage.success("合同类型新增成功");
+    }
+    await loadContractTypeList();
+    resetTypeForm();
+  } catch (error: any) {
+    console.error("保存合同类型失败:", error);
+    const message = error?.response?.data?.message || "保存合同类型失败";
+    if (String(message).includes("已存在")) {
+      await loadContractTypeList();
+      ElMessage.warning("该类型已存在，已刷新列表");
+      return;
+    }
+    ElMessage.error(message);
+  } finally {
+    typeManageLoading.value = false;
+  }
+};
+
+const handleDeleteType = async (row: ContractTypeItem) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定删除合同类型【${row.name}（${row.code}）】吗？`,
+      "提示",
+      {
+        confirmButtonText: "确定",
+        cancelButtonText: "取消",
+        type: "warning",
+      },
+    );
+    await deleteContractType(row.code);
+    ElMessage.success("删除成功");
+    await loadContractTypeList();
+    if (editingTypeCode.value === row.code) {
+      resetTypeForm();
+    }
+  } catch (error: any) {
+    if (error === "cancel" || error === "close") {
+      return;
+    }
+    console.error("删除合同类型失败:", error);
+    ElMessage.error(error?.response?.data?.message || "删除合同类型失败");
+  }
+};
+
+const getContractTypeLabel = (code: string) => {
+  const matched = contractTypeList.value.find((item) => item.code === code);
+  return matched?.name || code || "-";
 };
 
 const handleDetailClose = () => {
@@ -620,5 +836,12 @@ const getStatusText = (status: string) => {
 
 .import-overwrite {
   margin-top: 16px;
+}
+
+.type-manage-form {
+  display: grid;
+  grid-template-columns: 1.1fr 1.2fr auto auto;
+  gap: 10px;
+  margin-bottom: 16px;
 }
 </style>

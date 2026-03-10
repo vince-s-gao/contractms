@@ -27,6 +27,7 @@ export interface ContractQueryParams {
   size?: number;
   keyword?: string;
   customerName?: string;
+  signingYear?: number;
   contractNo?: string;
   contractName?: string;
   contractType?: string;
@@ -43,6 +44,11 @@ export interface ContractExportParams {
   status?: string;
   startDate?: string;
   endDate?: string;
+}
+
+export interface ContractTypeItem {
+  code: string;
+  name: string;
 }
 
 // 获取合同列表
@@ -175,5 +181,38 @@ export const importContracts = (formData: FormData, overwrite = false) => {
     headers: {
       "Content-Type": "multipart/form-data",
     },
+  });
+};
+
+export const getContractTypes = () => {
+  return request({
+    url: "/contracts/types",
+    method: "get",
+  });
+};
+
+export const createContractType = (data: { code: string; name: string }) => {
+  return request({
+    url: "/contracts/types",
+    method: "post",
+    data,
+  });
+};
+
+export const updateContractType = (
+  code: string,
+  data: { code?: string; name?: string },
+) => {
+  return request({
+    url: `/contracts/types/${encodeURIComponent(code)}`,
+    method: "put",
+    data,
+  });
+};
+
+export const deleteContractType = (code: string) => {
+  return request({
+    url: `/contracts/types/${encodeURIComponent(code)}`,
+    method: "delete",
   });
 };

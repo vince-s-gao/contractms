@@ -16,10 +16,15 @@ import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @RestController
 @RequestMapping("/api/contracts")
 public class ContractController {
+    private static final Pattern CONTRACT_TYPE_CODE_PATTERN = Pattern.compile("^[A-Z0-9_]{2,50}$");
+    private static final Pattern ENUM_ITEM_PATTERN = Pattern.compile("'([^']*)'");
+    private static final Pattern SIGNING_YEAR_PATTERN = Pattern.compile("20\\d{2}");
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -35,6 +40,7 @@ public class ContractController {
                                           @RequestParam(defaultValue = "10", name = "size") int size,
                                           @RequestParam(required = false, name = "keyword") String keyword,
                                           @RequestParam(required = false, name = "customerName") String customerName,
+                                          @RequestParam(required = false, name = "signingYear") Integer signingYear,
                                           @RequestParam(required = false, name = "status") String status,
                                           @RequestParam(required = false, name = "startDate") String startDate,
                                           @RequestParam(required = false, name = "endDate") String endDate) {
@@ -47,6 +53,7 @@ public class ContractController {
                        c.id AS contractId,
                        c.contract_no AS contractNo,
                        c.contract_no AS contractNumber,
+                       c.signing_year AS signingYear,
                        c.contract_name AS contractName,
                        c.party_a AS customerName,
                        c.party_b AS companySignatory,
@@ -80,6 +87,10 @@ public class ContractController {
             listSql.append(" AND c.party_a LIKE ?");
             params.add("%" + customerName.trim() + "%");
         }
+        if (signingYear != null) {
+            listSql.append(" AND c.signing_year = ?");
+            params.add(signingYear);
+        }
         if (!isBlank(status)) {
             listSql.append(" AND c.status = ?");
             params.add(toContractDbStatus(status));
@@ -109,6 +120,10 @@ public class ContractController {
         if (!isBlank(customerName)) {
             countSql.append(" AND c.party_a LIKE ?");
             countParams.add("%" + customerName.trim() + "%");
+        }
+        if (signingYear != null) {
+            countSql.append(" AND c.signing_year = ?");
+            countParams.add(signingYear);
         }
         if (!isBlank(status)) {
             countSql.append(" AND c.status = ?");
@@ -185,6 +200,7 @@ public class ContractController {
                 }
 
                 String contractType = toContractType(asString(values.get("contractType")));
+                Integer signingYear = extractSigningYearFromContractNo(contractNo);
                 BigDecimal amount = asBigDecimalOrNull(values.get("amount"));
                 LocalDate startDate = asDate(values.get("startDate"));
                 LocalDate endDate = asDate(values.get("endDate"));
@@ -214,6 +230,7 @@ public class ContractController {
                                     UPDATE contracts
                                     SET contract_name = ?,
                                         contract_type = ?,
+                                        signing_year = ?,
                                         amount = ?,
                                         start_date = ?,
                                         end_date = ?,
@@ -223,7 +240,7 @@ public class ContractController {
                                         updated_time = NOW()
                                     WHERE id = ?
                                     """,
-                            contractName, contractType, amount, toSqlDate(startDate), toSqlDate(endDate),
+                            contractName, contractType, signingYear, amount, toSqlDate(startDate), toSqlDate(endDate),
                             dbStatus, description, createdBy, existingId);
                     updated++;
                     continue;
@@ -231,12 +248,12 @@ public class ContractController {
 
                 jdbcTemplate.update("""
                                 INSERT INTO contracts (
-                                    contract_no, contract_name, contract_type,
+                                    contract_no, contract_name, contract_type, signing_year,
                                     party_a, party_b, amount, start_date, end_date,
                                     status, description, created_by, updated_by
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                                 """,
-                        contractNo, contractName, contractType, partyA, partyB, amount,
+                        contractNo, contractName, contractType, signingYear, partyA, partyB, amount,
                         toSqlDate(startDate), toSqlDate(endDate), dbStatus, description, createdBy, createdBy);
                 success++;
             } catch (Exception e) {
@@ -263,6 +280,7 @@ public class ContractController {
                        c.id AS contractId,
                        c.contract_no AS contractNo,
                        c.contract_no AS contractNumber,
+                       c.signing_year AS signingYear,
                        c.contract_name AS contractName,
                        c.party_a AS customerName,
                        c.party_b AS companySignatory,
@@ -319,6 +337,7 @@ public class ContractController {
         }
 
         String contractType = toContractType(asString(request.get("contractType")));
+        Integer signingYear = extractSigningYearFromContractNo(contractNo);
         BigDecimal amount = asBigDecimal(request.get("amount"));
         LocalDate startDate = asDate(request.get("startDate"));
         LocalDate endDate = asDate(request.get("endDate"));
@@ -329,13 +348,13 @@ public class ContractController {
 
         String insertSql = """
                 INSERT INTO contracts (
-                    contract_no, contract_name, contract_type,
+                    contract_no, contract_name, contract_type, signing_year,
                     party_a, party_b, amount, start_date, end_date,
                     status, description, created_by, updated_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?)
                 """;
         jdbcTemplate.update(insertSql,
-                contractNo, contractName, contractType,
+                contractNo, contractName, contractType, signingYear,
                 partyName, partyContact, amount, toSqlDate(startDate), toSqlDate(endDate),
                 description, createdBy, createdBy);
 
@@ -360,12 +379,15 @@ public class ContractController {
         if (!isBlank(contractNo) && !contractNo.equals(currentNo) && existsContractNo(contractNo, id)) {
             return ResponseEntity.badRequest().body(Map.of("message", "合同编号已存在"));
         }
+        String finalContractNo = isBlank(contractNo) ? currentNo : contractNo;
+        Integer signingYear = extractSigningYearFromContractNo(finalContractNo);
 
         String updateSql = """
                 UPDATE contracts
                 SET contract_no = COALESCE(?, contract_no),
                     contract_name = COALESCE(?, contract_name),
                     contract_type = COALESCE(?, contract_type),
+                    signing_year = ?,
                     amount = COALESCE(?, amount),
                     start_date = COALESCE(?, start_date),
                     end_date = COALESCE(?, end_date),
@@ -385,6 +407,7 @@ public class ContractController {
                 nullable(contractNo),
                 nullable(asString(request.get("contractName"))),
                 mappedType,
+                signingYear,
                 asBigDecimalOrNull(request.get("amount")),
                 toSqlDate(asDate(request.get("startDate"))),
                 toSqlDate(asDate(request.get("endDate"))),
@@ -464,6 +487,7 @@ public class ContractController {
                        c.id AS contractId,
                        c.contract_no AS contractNo,
                        c.contract_no AS contractNumber,
+                       c.signing_year AS signingYear,
                        c.contract_name AS contractName,
                        c.party_a AS customerName,
                        c.party_b AS companySignatory,
@@ -529,6 +553,7 @@ public class ContractController {
                        c.id AS contractId,
                        c.contract_no AS contractNo,
                        c.contract_no AS contractNumber,
+                       c.signing_year AS signingYear,
                        c.contract_name AS contractName,
                        c.contract_type AS contractType,
                        c.amount AS amount,
@@ -560,6 +585,111 @@ public class ContractController {
     public ResponseEntity<?> checkUnique(@RequestParam String contractNo,
                                          @RequestParam(required = false) Long excludeId) {
         return ResponseEntity.ok(Map.of("unique", !existsContractNo(contractNo, excludeId)));
+    }
+
+    @GetMapping("/types")
+    public ResponseEntity<?> getContractTypes() {
+        ensureContractTypeMetaTable();
+        List<String> enumCodes = getContractTypeEnumCodes();
+        Map<String, String> metaNames = getContractTypeMetaNames();
+        List<Map<String, Object>> records = new ArrayList<>();
+        for (String code : enumCodes) {
+            String name = metaNames.getOrDefault(code, defaultContractTypeName(code));
+            records.add(Map.of("code", code, "name", name));
+        }
+        return ResponseEntity.ok(Map.of("records", records, "total", records.size()));
+    }
+
+    @PostMapping("/types")
+    public ResponseEntity<?> createContractType(@RequestBody Map<String, Object> request) {
+        ensureContractTypeMetaTable();
+        String code = normalizeContractTypeCode(asString(request.get("code")));
+        String name = normalizeContractTypeName(asString(request.get("name")), code);
+        if (!isValidContractTypeCode(code)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "类型编码仅支持2-50位大写字母、数字、下划线"));
+        }
+
+        List<String> enumCodes = getContractTypeEnumCodes();
+        if (enumCodes.contains(code)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "合同类型编码已存在"));
+        }
+
+        List<String> updatedCodes = new ArrayList<>(enumCodes);
+        updatedCodes.add(code);
+        updateContractTypeEnum(updatedCodes);
+        upsertContractTypeMeta(code, name);
+        return ResponseEntity.ok(Map.of("code", code, "name", name));
+    }
+
+    @PutMapping("/types/{code}")
+    public ResponseEntity<?> updateContractType(@PathVariable String code,
+                                                @RequestBody Map<String, Object> request) {
+        ensureContractTypeMetaTable();
+        String oldCode = normalizeContractTypeCode(code);
+        String newCode = normalizeContractTypeCode(asString(request.get("code")));
+        if (isBlank(newCode)) {
+            newCode = oldCode;
+        }
+        String newName = normalizeContractTypeName(asString(request.get("name")), newCode);
+
+        if (!isValidContractTypeCode(oldCode) || !isValidContractTypeCode(newCode)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "类型编码仅支持2-50位大写字母、数字、下划线"));
+        }
+
+        List<String> enumCodes = getContractTypeEnumCodes();
+        if (!enumCodes.contains(oldCode)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "合同类型不存在"));
+        }
+
+        if (!oldCode.equals(newCode) && enumCodes.contains(newCode)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "新的合同类型编码已存在"));
+        }
+
+        if (!oldCode.equals(newCode)) {
+            List<String> updatedCodes = new ArrayList<>();
+            for (String item : enumCodes) {
+                updatedCodes.add(item.equals(oldCode) ? newCode : item);
+            }
+            updateContractTypeEnum(updatedCodes);
+            jdbcTemplate.update("UPDATE contracts SET contract_type = ? WHERE contract_type = ?", newCode, oldCode);
+            jdbcTemplate.update("DELETE FROM contract_type_meta WHERE type_code = ?", oldCode);
+        }
+
+        upsertContractTypeMeta(newCode, newName);
+        return ResponseEntity.ok(Map.of("code", newCode, "name", newName));
+    }
+
+    @DeleteMapping("/types/{code}")
+    public ResponseEntity<?> deleteContractType(@PathVariable String code) {
+        ensureContractTypeMetaTable();
+        String typeCode = normalizeContractTypeCode(code);
+        if (!isValidContractTypeCode(typeCode)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "合同类型编码格式不正确"));
+        }
+
+        List<String> enumCodes = getContractTypeEnumCodes();
+        if (!enumCodes.contains(typeCode)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "合同类型不存在"));
+        }
+
+        Long usedCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM contracts WHERE contract_type = ?", Long.class, typeCode);
+        if (usedCount != null && usedCount > 0) {
+            return ResponseEntity.badRequest().body(Map.of("message", "该类型已被合同使用，无法删除"));
+        }
+
+        List<String> updatedCodes = new ArrayList<>();
+        for (String item : enumCodes) {
+            if (!item.equals(typeCode)) {
+                updatedCodes.add(item);
+            }
+        }
+        if (updatedCodes.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "至少保留一个合同类型"));
+        }
+        updateContractTypeEnum(updatedCodes);
+        jdbcTemplate.update("DELETE FROM contract_type_meta WHERE type_code = ?", typeCode);
+        return ResponseEntity.ok(Map.of("message", "删除成功"));
     }
 
     private boolean existsContractNo(String contractNo, Long excludeId) {
@@ -613,7 +743,7 @@ public class ContractController {
         if (isBlank(type)) {
             return "OTHER";
         }
-        String upper = type.toUpperCase(Locale.ROOT);
+        String upper = type.trim().toUpperCase(Locale.ROOT);
         if (upper.contains("销售") || "SALES".equals(upper)) {
             return "SALES";
         }
@@ -623,7 +753,111 @@ public class ContractController {
         if (upper.contains("服务") || "SERVICE".equals(upper) || upper.contains("技术")) {
             return "SERVICE";
         }
+        if (CONTRACT_TYPE_CODE_PATTERN.matcher(upper).matches()) {
+            return upper;
+        }
         return "OTHER";
+    }
+
+    private void ensureContractTypeMetaTable() {
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS contract_type_meta (
+                    type_code VARCHAR(50) NOT NULL PRIMARY KEY,
+                    type_name VARCHAR(100) NOT NULL,
+                    created_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """);
+    }
+
+    private Map<String, String> getContractTypeMetaNames() {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT type_code, type_name FROM contract_type_meta");
+        Map<String, String> result = new HashMap<>();
+        for (Map<String, Object> row : rows) {
+            String code = normalizeContractTypeCode(asString(row.get("type_code")));
+            String name = asString(row.get("type_name"));
+            if (!isBlank(code) && !isBlank(name)) {
+                result.put(code, name.trim());
+            }
+        }
+        return result;
+    }
+
+    private List<String> getContractTypeEnumCodes() {
+        String enumSql = """
+                SELECT COLUMN_TYPE
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'contracts'
+                  AND COLUMN_NAME = 'contract_type'
+                LIMIT 1
+                """;
+        String columnType = jdbcTemplate.queryForObject(enumSql, String.class);
+        if (columnType == null || !columnType.toLowerCase(Locale.ROOT).startsWith("enum(")) {
+            return new ArrayList<>(List.of("SALES", "PURCHASE", "SERVICE", "OTHER"));
+        }
+        List<String> values = new ArrayList<>();
+        Matcher matcher = ENUM_ITEM_PATTERN.matcher(columnType);
+        while (matcher.find()) {
+            String value = normalizeContractTypeCode(matcher.group(1));
+            if (!isBlank(value)) {
+                values.add(value);
+            }
+        }
+        return values;
+    }
+
+    private void updateContractTypeEnum(List<String> typeCodes) {
+        StringBuilder sql = new StringBuilder("ALTER TABLE contracts MODIFY COLUMN contract_type ENUM(");
+        for (int i = 0; i < typeCodes.size(); i++) {
+            if (i > 0) {
+                sql.append(",");
+            }
+            sql.append("'").append(typeCodes.get(i)).append("'");
+        }
+        sql.append(") NOT NULL");
+        jdbcTemplate.execute(sql.toString());
+    }
+
+    private void upsertContractTypeMeta(String code, String name) {
+        jdbcTemplate.update("""
+                        INSERT INTO contract_type_meta (type_code, type_name)
+                        VALUES (?, ?)
+                        ON DUPLICATE KEY UPDATE type_name = VALUES(type_name)
+                        """,
+                code, name);
+    }
+
+    private static String normalizeContractTypeCode(String code) {
+        if (isBlank(code)) {
+            return null;
+        }
+        return code.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private static String normalizeContractTypeName(String name, String fallbackCode) {
+        if (!isBlank(name)) {
+            return name.trim();
+        }
+        return defaultContractTypeName(fallbackCode);
+    }
+
+    private static boolean isValidContractTypeCode(String code) {
+        return !isBlank(code) && CONTRACT_TYPE_CODE_PATTERN.matcher(code).matches();
+    }
+
+    private static String defaultContractTypeName(String code) {
+        if (isBlank(code)) {
+            return "其他";
+        }
+        return switch (code.toUpperCase(Locale.ROOT)) {
+            case "SALES" -> "销售合同";
+            case "PURCHASE" -> "采购合同";
+            case "SERVICE" -> "服务合同";
+            case "OTHER" -> "其他";
+            default -> code;
+        };
     }
 
     private static BigDecimal asBigDecimal(Object value) {
@@ -713,6 +947,21 @@ public class ContractController {
         return "IMP" + System.currentTimeMillis() + rowNumber + (int) (Math.random() * 1000);
     }
 
+    private static Integer extractSigningYearFromContractNo(String contractNo) {
+        if (isBlank(contractNo)) {
+            return null;
+        }
+        Matcher matcher = SIGNING_YEAR_PATTERN.matcher(contractNo);
+        if (!matcher.find()) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(matcher.group());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
     private static List<String> parseExportFields(String fields) {
         if (isBlank(fields)) {
             return Collections.emptyList();
@@ -736,6 +985,7 @@ public class ContractController {
                        c.id AS contractId,
                        c.contract_no AS contractNo,
                        c.contract_no AS contractNumber,
+                       c.signing_year AS signingYear,
                        c.contract_name AS contractName,
                        c.contract_type AS contractType,
                        c.amount AS amount,

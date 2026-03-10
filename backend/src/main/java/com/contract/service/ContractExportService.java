@@ -18,6 +18,7 @@ public class ContractExportService {
 
     static {
         FIELD_LABELS.put("contractNo", "合同编号");
+        FIELD_LABELS.put("signingYear", "签约年份");
         FIELD_LABELS.put("contractName", "合同名称");
         FIELD_LABELS.put("customerName", "客户名称");
         FIELD_LABELS.put("companySignatory", "公司签约主体");

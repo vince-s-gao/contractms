@@ -13,6 +13,9 @@
           <el-descriptions-item label="合同编号">{{
             contractDetail?.contractNumber
           }}</el-descriptions-item>
+          <el-descriptions-item label="签约年份">{{
+            contractDetail?.signingYear || "-"
+          }}</el-descriptions-item>
           <el-descriptions-item label="合同名称">{{
             contractDetail?.contractName
           }}</el-descriptions-item>
@@ -106,10 +109,12 @@
 
 <script setup lang="ts">
 import { ref, watch } from "vue";
+import { useRouter } from "vue-router";
 
 interface ContractDetail {
   id: string;
   contractNumber: string;
+  signingYear?: number;
   contractName: string;
   contractType: string;
   amount: number;
@@ -160,6 +165,7 @@ const contractDetail = ref<ContractDetail | null>(null);
 const participants = ref<Participant[]>([]);
 const attachments = ref<Attachment[]>([]);
 const approvalRecords = ref<ApprovalRecord[]>([]);
+const router = useRouter();
 
 // 监听props变化
 watch(
@@ -183,69 +189,48 @@ const loadContractDetail = async () => {
   loading.value = true;
 
   try {
-    // 模拟API调用
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    const token = localStorage.getItem("token");
+    const response = await fetch(`/api/contracts/${props.contractId}`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
 
-    // 模拟数据
+    if (response.status === 401) {
+      localStorage.removeItem("token");
+      localStorage.removeItem("userInfo");
+      router.push("/login");
+      return;
+    }
+    if (!response.ok) {
+      throw new Error("获取合同详情失败");
+    }
+
+    const data = await response.json();
     contractDetail.value = {
-      id: props.contractId,
-      contractNumber: "HT20230001",
-      contractName: "软件开发服务合同",
-      contractType: "技术服务",
-      amount: 500000,
-      status: "active",
-      startDate: "2023-01-01",
-      endDate: "2023-12-31",
-      createdBy: "张三",
-      createdAt: "2023-01-01 10:00:00",
-      content:
-        "本合同由甲乙双方根据《中华人民共和国合同法》等相关法律法规，经友好协商一致达成。",
+      id: String(data.id ?? props.contractId),
+      contractNumber: data.contractNumber || data.contractNo || "",
+      signingYear: data.signingYear ? Number(data.signingYear) : undefined,
+      contractName: data.contractName || "",
+      contractType: data.contractType || "",
+      amount: Number(data.amount || 0),
+      status: data.status || "draft",
+      startDate: data.startDate || "",
+      endDate: data.endDate || "",
+      createdBy: String(data.createdBy ?? ""),
+      createdAt: data.createdAt || "",
+      content: data.content || data.description || "",
     };
 
-    participants.value = [
-      {
-        id: "1",
-        name: "张三",
-        role: "甲方代表",
-        department: "技术部",
-        phone: "13800138000",
-      },
-      {
-        id: "2",
-        name: "李四",
-        role: "乙方代表",
-        department: "销售部",
-        phone: "13900139000",
-      },
-    ];
-
-    attachments.value = [
-      {
-        id: "1",
-        name: "合同附件1.pdf",
-        size: "2.5MB",
-        uploadTime: "2023-01-01 10:00:00",
-      },
-    ];
-
-    approvalRecords.value = [
-      {
-        id: "1",
-        approver: "王五",
-        status: "approved",
-        comment: "合同内容完整，同意",
-        createdAt: "2023-01-02 09:00:00",
-      },
-      {
-        id: "2",
-        approver: "赵六",
-        status: "approved",
-        comment: "金额合理，同意",
-        createdAt: "2023-01-02 14:00:00",
-      },
-    ];
+    // 现有后端未提供详情参与人员/附件/审批记录，先清空避免展示假数据
+    participants.value = [];
+    attachments.value = [];
+    approvalRecords.value = [];
   } catch (error) {
     console.error("加载合同详情失败", error);
+    contractDetail.value = null;
   } finally {
     loading.value = false;
   }

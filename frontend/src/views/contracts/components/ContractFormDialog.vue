@@ -26,6 +26,14 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
+            <el-form-item label="签约年份">
+              <el-input :model-value="signingYearPreview" disabled placeholder="将从合同编号自动提取" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="20">
+          <el-col :span="12">
             <el-form-item label="合同名称" prop="contractName">
               <el-input
                 v-model="formData.contractName"
@@ -43,11 +51,12 @@
                 placeholder="请选择合同类型"
                 style="width: 100%"
               >
-                <el-option label="技术服务" value="技术服务" />
-                <el-option label="采购" value="采购" />
-                <el-option label="销售" value="销售" />
-                <el-option label="租赁" value="租赁" />
-                <el-option label="劳务" value="劳务" />
+                <el-option
+                  v-for="item in contractTypeOptions"
+                  :key="item.code"
+                  :label="item.name"
+                  :value="item.code"
+                />
               </el-select>
             </el-form-item>
           </el-col>
@@ -197,7 +206,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch } from "vue";
+import { ref, reactive, computed, watch, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import {
   ElMessage,
@@ -205,6 +214,7 @@ import {
   type FormRules,
   type UploadFile,
 } from "element-plus";
+import { getContractTypes, type ContractTypeItem } from "@/api/contract";
 
 interface ContractFormData {
   contractNumber: string;
@@ -241,9 +251,19 @@ const visible = ref(false);
 const loading = ref(false);
 const formRef = ref<FormInstance>();
 const fileList = ref<UploadFile[]>([]);
+const contractTypeOptions = ref<ContractTypeItem[]>([
+  { code: "SALES", name: "销售合同" },
+  { code: "PURCHASE", name: "采购合同" },
+  { code: "SERVICE", name: "服务合同" },
+  { code: "OTHER", name: "其他" },
+]);
 
 const isEdit = computed(() => !!props.contractData);
 const formTitle = computed(() => (isEdit.value ? "编辑合同" : "新建合同"));
+const signingYearPreview = computed(() => {
+  const matched = (formData.contractNumber || "").match(/20\d{2}/);
+  return matched ? matched[0] : "";
+});
 
 const formData = reactive<ContractFormData>({
   contractNumber: "",
@@ -272,12 +292,17 @@ const formRules: FormRules = {
   endDate: [{ required: true, message: "请选择结束日期", trigger: "change" }],
 };
 
+onMounted(() => {
+  loadContractTypeOptions();
+});
+
 // 监听props变化
 watch(
   () => props.modelValue,
   (val) => {
     visible.value = val;
     if (val) {
+      loadContractTypeOptions();
       resetForm();
       if (props.contractData) {
         loadContractData();
@@ -290,6 +315,18 @@ watch(visible, (val) => {
   emit("update:modelValue", val);
 });
 
+const loadContractTypeOptions = async () => {
+  try {
+    const response = await getContractTypes();
+    const list = response.records || response.data?.records || [];
+    if (Array.isArray(list) && list.length > 0) {
+      contractTypeOptions.value = list;
+    }
+  } catch (error) {
+    console.error("加载合同类型失败:", error);
+  }
+};
+
 const loadContractData = () => {
   if (!props.contractData) return;
 
@@ -300,6 +337,15 @@ const loadContractData = () => {
     companySignatory:
       props.contractData.companySignatory || props.contractData.partyB || "",
   });
+  if (
+    formData.contractType &&
+    !contractTypeOptions.value.some((item) => item.code === formData.contractType)
+  ) {
+    contractTypeOptions.value.push({
+      code: formData.contractType,
+      name: formData.contractType,
+    });
+  }
 };
 
 const resetForm = () => {
