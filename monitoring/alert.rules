@@ -1,0 +1,119 @@
+# 告警规则配置
+groups:
+- name: contract-app
+  rules:
+  # 应用可用性告警
+  - alert: ContractAppDown
+    expr: up{job="contract-app"} == 0
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "合同管理系统应用不可用"
+      description: "应用 {{ $labels.instance }} 已宕机超过1分钟"
+
+  # 高内存使用率告警
+  - alert: HighMemoryUsage
+    expr: (process_resident_memory_bytes{job="contract-app"} / process_max_fds{job="contract-app"}) > 0.8
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "应用内存使用率过高"
+      description: "应用 {{ $labels.instance }} 内存使用率超过80%"
+
+  # 高CPU使用率告警
+  - alert: HighCPUUsage
+    expr: rate(process_cpu_seconds_total{job="contract-app"}[5m]) > 0.8
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "应用CPU使用率过高"
+      description: "应用 {{ $labels.instance }} CPU使用率超过80%"
+
+  # 数据库连接异常告警
+  - alert: DatabaseConnectionError
+    expr: increase(http_server_requests_seconds_count{job="contract-app",exception="DataAccessException"}[5m]) > 10
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: "数据库连接异常"
+      description: "应用 {{ $labels.instance }} 数据库连接错误频繁"
+
+  # 高错误率告警
+  - alert: HighErrorRate
+    expr: rate(http_server_requests_seconds_count{job="contract-app",status=~"5.."}[5m]) / rate(http_server_requests_seconds_count{job="contract-app"}[5m]) > 0.05
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "应用错误率过高"
+      description: "应用 {{ $labels.instance }} 5xx错误率超过5%"
+
+- name: database
+  rules:
+  # MySQL连接数告警
+  - alert: MySQLHighConnections
+    expr: mysql_global_status_threads_connected{job="mysql"} / mysql_global_variables_max_connections{job="mysql"} > 0.8
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "MySQL连接数过高"
+      description: "MySQL连接数使用率超过80%"
+
+  # MySQL慢查询告警
+  - alert: MySQLSlowQueries
+    expr: rate(mysql_global_status_slow_queries{job="mysql"}[5m]) > 10
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "MySQL慢查询过多"
+      description: "MySQL慢查询数量异常增加"
+
+- name: redis
+  rules:
+  # Redis内存使用率告警
+  - alert: RedisHighMemoryUsage
+    expr: redis_memory_used_bytes{job="redis"} / redis_memory_max_bytes{job="redis"} > 0.8
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Redis内存使用率过高"
+      description: "Redis内存使用率超过80%"
+
+  # Redis连接数告警
+  - alert: RedisHighConnections
+    expr: redis_connected_clients{job="redis"} > 1000
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Redis连接数过高"
+      description: "Redis连接数超过1000"
+
+- name: system
+  rules:
+  # 磁盘空间告警
+  - alert: DiskSpaceLow
+    expr: (1 - (node_filesystem_avail_bytes{job="node-exporter",mountpoint="/"} / node_filesystem_size_bytes{job="node-exporter",mountpoint="/"})) > 0.8
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "磁盘空间不足"
+      description: "根目录磁盘使用率超过80%"
+
+  # 系统负载告警
+  - alert: HighSystemLoad
+    expr: node_load1{job="node-exporter"} > (count by (instance)(node_cpu_seconds_total{job="node-exporter",mode="idle"})) * 0.8
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "系统负载过高"
+      description: "系统1分钟平均负载超过CPU核心数的80%"

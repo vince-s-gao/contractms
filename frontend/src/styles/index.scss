@@ -1,0 +1,137 @@
+/* 全局样式文件 */
+
+// 重置样式
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+// 全局字体
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #303133;
+  background-color: #f5f7fa;
+}
+
+// 链接样式
+a {
+  color: #409eff;
+  text-decoration: none;
+  
+  &:hover {
+    color: #66b1ff;
+  }
+}
+
+// 容器样式
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+// 卡片样式
+.card {
+  background: #fff;
+  border-radius: 4px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+// 按钮样式
+.btn {
+  display: inline-block;
+  padding: 8px 16px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  background: #fff;
+  color: #606266;
+  cursor: pointer;
+  text-align: center;
+  
+  &:hover {
+    border-color: #c6e2ff;
+    background-color: #ecf5ff;
+    color: #409eff;
+  }
+  
+  &.primary {
+    background: #409eff;
+    border-color: #409eff;
+    color: #fff;
+    
+    &:hover {
+      background: #66b1ff;
+      border-color: #66b1ff;
+    }
+  }
+}
+
+// 表格样式
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  
+  th, td {
+    padding: 12px 16px;
+    border-bottom: 1px solid #ebeef5;
+    text-align: left;
+  }
+  
+  th {
+    background: #f5f7fa;
+    font-weight: 600;
+    color: #909399;
+  }
+  
+  tr:hover {
+    background: #f5f7fa;
+  }
+}
+
+// 表单样式
+.form-group {
+  margin-bottom: 20px;
+  
+  label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+    color: #606266;
+  }
+  
+  .form-control {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #dcdfe6;
+    border-radius: 4px;
+    font-size: 14px;
+    
+    &:focus {
+      outline: none;
+      border-color: #409eff;
+      box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.2);
+    }
+  }
+}
+
+// 响应式设计
+@media (max-width: 768px) {
+  .container {
+    padding: 0 10px;
+  }
+  
+  .card {
+    padding: 15px;
+  }
+  
+  .table {
+    th, td {
+      padding: 8px 12px;
+    }
+  }
+}

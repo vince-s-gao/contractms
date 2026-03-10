@@ -1,0 +1,45 @@
+# Prometheus监控配置
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# 告警规则配置
+rule_files:
+  - "alert.rules"
+
+# 抓取配置
+scrape_configs:
+  # 应用监控
+  - job_name: 'contract-app'
+    static_configs:
+      - targets: ['app:8080']
+    metrics_path: '/actuator/prometheus'
+    scrape_interval: 30s
+    
+  # MySQL监控
+  - job_name: 'mysql'
+    static_configs:
+      - targets: ['mysql:9104']
+    
+  # Redis监控
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:9121']
+    
+  # Node Exporter（系统监控）
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    
+  # Nginx监控
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx:9113']
+
+# 远程写入配置（可选）
+remote_write:
+  - url: "http://your-monitoring-service/api/v1/write"
+    
+# 远程读取配置（可选）
+remote_read:
+  - url: "http://your-monitoring-service/api/v1/read"
