@@ -35,6 +35,14 @@ export interface ContractQueryParams {
   ownerId?: string;
 }
 
+export interface ContractExportParams {
+  fields?: string;
+  keyword?: string;
+  status?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
 // 获取合同列表
 export const getContracts = (params: ContractQueryParams) => {
   return request({
@@ -143,5 +151,27 @@ export const checkContractNoUnique = (
     url: "/contracts/check-unique",
     method: "get",
     params: { contractNo, excludeId },
+  });
+};
+
+// 导出合同（Excel）
+export const exportContracts = (params: ContractExportParams) => {
+  return request({
+    url: "/contracts/export",
+    method: "get",
+    params,
+    responseType: "blob",
+  });
+};
+
+// 批量导入合同（Excel）
+export const importContracts = (formData: FormData, overwrite = false) => {
+  return request({
+    url: `/contracts/import?overwrite=${overwrite}`,
+    method: "post",
+    data: formData,
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
   });
 };

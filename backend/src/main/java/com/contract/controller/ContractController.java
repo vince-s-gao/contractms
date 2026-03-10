@@ -1,10 +1,17 @@
 package com.contract.controller;
 
+import com.contract.service.ContractExportService;
+import com.contract.service.ContractImportService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDate;
@@ -16,6 +23,12 @@ public class ContractController {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private ContractExportService contractExportService;
+
+    @Autowired
+    private ContractImportService contractImportService;
 
     @GetMapping
     public ResponseEntity<?> getContracts(@RequestParam(defaultValue = "1") int page,
@@ -30,6 +43,8 @@ public class ContractController {
                        c.contract_no AS contractNo,
                        c.contract_no AS contractNumber,
                        c.contract_name AS contractName,
+                       c.party_a AS customerName,
+                       c.party_b AS companySignatory,
                        c.contract_type AS contractType,
                        c.amount AS amount,
                        c.created_by AS createdBy,
@@ -60,6 +75,131 @@ public class ContractController {
         return ResponseEntity.ok(result);
     }
 
+    @GetMapping("/export")
+    public ResponseEntity<byte[]> exportContracts(@RequestParam(required = false) String fields,
+                                                  @RequestParam(required = false) String keyword,
+                                                  @RequestParam(required = false) String status,
+                                                  @RequestParam(required = false) String startDate,
+                                                  @RequestParam(required = false) String endDate) {
+        List<String> selectedFields = parseExportFields(fields);
+        List<Map<String, Object>> records = queryContractsForExport(keyword, status, startDate, endDate);
+        byte[] fileContent = contractExportService.exportToExcel(records, selectedFields);
+
+        String fileName = "合同导出.xlsx";
+        String encodedFileName = URLEncoder.encode(fileName, StandardCharsets.UTF_8).replace("+", "%20");
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename*=UTF-8''" + encodedFileName)
+                .header(HttpHeaders.CONTENT_TYPE,
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                .body(fileContent);
+    }
+
+    @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> importContracts(@RequestPart("file") MultipartFile file,
+                                             @RequestParam(defaultValue = "false") boolean overwrite) {
+        final List<ContractImportService.ImportRow> rows;
+        try {
+            rows = contractImportService.parseContractRows(file);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+        if (rows.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Excel中没有可导入的数据"));
+        }
+
+        int total = rows.size();
+        int success = 0;
+        int updated = 0;
+        int skipped = 0;
+        int failed = 0;
+        List<Map<String, Object>> errors = new ArrayList<>();
+
+        for (ContractImportService.ImportRow importRow : rows) {
+            int rowNumber = importRow.rowNumber();
+            Map<String, Object> values = importRow.values();
+            try {
+                String contractNo = asString(values.get("contractNo"));
+                String contractName = asString(values.get("contractName"));
+                if (isBlank(contractNo)) {
+                    contractNo = generateImportContractNo(rowNumber);
+                }
+                if (isBlank(contractName)) {
+                    contractName = "批量导入合同-第" + rowNumber + "行";
+                }
+
+                String contractType = toContractType(asString(values.get("contractType")));
+                BigDecimal amount = asBigDecimalOrNull(values.get("amount"));
+                LocalDate startDate = asDate(values.get("startDate"));
+                LocalDate endDate = asDate(values.get("endDate"));
+                if (amount == null) {
+                    amount = BigDecimal.ZERO;
+                }
+                if (startDate == null) {
+                    startDate = LocalDate.now();
+                }
+                if (endDate == null) {
+                    endDate = startDate.plusYears(1);
+                }
+
+                String dbStatus = toContractDbStatus(asString(values.get("status")));
+                Long createdBy = asLong(values.get("createdBy"), 1L);
+                String partyA = defaultIfBlank(asString(values.get("customerName")), "导入甲方");
+                String partyB = defaultIfBlank(asString(values.get("companySignatory")), "导入乙方");
+                String description = asString(values.get("description"));
+
+                Long existingId = findContractIdByNo(contractNo);
+                if (existingId != null) {
+                    if (!overwrite) {
+                        skipped++;
+                        continue;
+                    }
+                    jdbcTemplate.update("""
+                                    UPDATE contracts
+                                    SET contract_name = ?,
+                                        contract_type = ?,
+                                        amount = ?,
+                                        start_date = ?,
+                                        end_date = ?,
+                                        status = ?,
+                                        description = COALESCE(?, description),
+                                        updated_by = ?,
+                                        updated_time = NOW()
+                                    WHERE id = ?
+                                    """,
+                            contractName, contractType, amount, toSqlDate(startDate), toSqlDate(endDate),
+                            dbStatus, description, createdBy, existingId);
+                    updated++;
+                    continue;
+                }
+
+                jdbcTemplate.update("""
+                                INSERT INTO contracts (
+                                    contract_no, contract_name, contract_type,
+                                    party_a, party_b, amount, start_date, end_date,
+                                    status, description, created_by, updated_by
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                """,
+                        contractNo, contractName, contractType, partyA, partyB, amount,
+                        toSqlDate(startDate), toSqlDate(endDate), dbStatus, description, createdBy, createdBy);
+                success++;
+            } catch (Exception e) {
+                failed++;
+                errors.add(Map.of("row", rowNumber, "message", defaultIfBlank(e.getMessage(), "导入失败")));
+            }
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("total", total);
+        result.put("success", success);
+        result.put("updated", updated);
+        result.put("skipped", skipped);
+        result.put("failed", failed);
+        result.put("overwrite", overwrite);
+        result.put("errors", errors.size() > 20 ? errors.subList(0, 20) : errors);
+        return ResponseEntity.ok(result);
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<?> getById(@PathVariable Long id) {
         String sql = """
@@ -68,6 +208,8 @@ public class ContractController {
                        c.contract_no AS contractNo,
                        c.contract_no AS contractNumber,
                        c.contract_name AS contractName,
+                       c.party_a AS customerName,
+                       c.party_b AS companySignatory,
                        c.contract_type AS contractType,
                        c.amount AS amount,
                        c.created_by AS createdBy,
@@ -77,6 +219,8 @@ public class ContractController {
                        c.description AS description,
                        c.party_a AS partyA,
                        c.party_b AS partyB,
+                       c.party_a AS customerName,
+                       c.party_b AS companySignatory,
                        CASE c.status
                            WHEN 'DRAFT' THEN 'draft'
                            WHEN 'PENDING' THEN 'approving'
@@ -265,6 +409,8 @@ public class ContractController {
                        c.contract_no AS contractNo,
                        c.contract_no AS contractNumber,
                        c.contract_name AS contractName,
+                       c.party_a AS customerName,
+                       c.party_b AS companySignatory,
                        c.contract_type AS contractType,
                        c.amount AS amount,
                        c.created_by AS createdBy,
@@ -495,5 +641,86 @@ public class ContractController {
 
     private static String defaultIfBlank(String value, String defaultValue) {
         return isBlank(value) ? defaultValue : value;
+    }
+
+    private Long findContractIdByNo(String contractNo) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT id FROM contracts WHERE contract_no = ? LIMIT 1", contractNo);
+        if (rows.isEmpty()) {
+            return null;
+        }
+        Number number = (Number) rows.get(0).get("id");
+        return number == null ? null : number.longValue();
+    }
+
+    private String generateImportContractNo(int rowNumber) {
+        return "IMP" + System.currentTimeMillis() + rowNumber + (int) (Math.random() * 1000);
+    }
+
+    private static List<String> parseExportFields(String fields) {
+        if (isBlank(fields)) {
+            return Collections.emptyList();
+        }
+        List<String> selected = new ArrayList<>();
+        for (String item : fields.split(",")) {
+            String value = item == null ? "" : item.trim();
+            if (!value.isEmpty()) {
+                selected.add(value);
+            }
+        }
+        return selected;
+    }
+
+    private List<Map<String, Object>> queryContractsForExport(String keyword,
+                                                              String status,
+                                                              String startDate,
+                                                              String endDate) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT c.id,
+                       c.id AS contractId,
+                       c.contract_no AS contractNo,
+                       c.contract_no AS contractNumber,
+                       c.contract_name AS contractName,
+                       c.contract_type AS contractType,
+                       c.amount AS amount,
+                       c.created_by AS createdBy,
+                       DATE_FORMAT(c.created_time, '%Y-%m-%d %H:%i:%s') AS createdAt,
+                       DATE_FORMAT(c.start_date, '%Y-%m-%d') AS startDate,
+                       DATE_FORMAT(c.end_date, '%Y-%m-%d') AS endDate,
+                       CASE c.status
+                           WHEN 'DRAFT' THEN 'draft'
+                           WHEN 'PENDING' THEN 'approving'
+                           WHEN 'APPROVED' THEN 'active'
+                           WHEN 'EXECUTING' THEN 'active'
+                           WHEN 'COMPLETED' THEN 'active'
+                           WHEN 'TERMINATED' THEN 'terminated'
+                           ELSE 'draft'
+                       END AS status
+                FROM contracts c
+                WHERE 1=1
+                """);
+        List<Object> params = new ArrayList<>();
+
+        if (!isBlank(keyword)) {
+            sql.append(" AND (c.contract_no LIKE ? OR c.contract_name LIKE ?)");
+            String likeKeyword = "%" + keyword.trim() + "%";
+            params.add(likeKeyword);
+            params.add(likeKeyword);
+        }
+        if (!isBlank(status)) {
+            sql.append(" AND c.status = ?");
+            params.add(toContractDbStatus(status));
+        }
+        if (!isBlank(startDate)) {
+            sql.append(" AND c.start_date >= ?");
+            params.add(startDate);
+        }
+        if (!isBlank(endDate)) {
+            sql.append(" AND c.end_date <= ?");
+            params.add(endDate);
+        }
+
+        sql.append(" ORDER BY c.id DESC");
+        return jdbcTemplate.queryForList(sql.toString(), params.toArray());
     }
 }

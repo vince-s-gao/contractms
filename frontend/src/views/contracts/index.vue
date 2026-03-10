@@ -39,6 +39,12 @@
             搜索
           </el-button>
           <el-button @click="handleReset">重置</el-button>
+          <el-button type="warning" plain @click="handleOpenImport">
+            批量上传
+          </el-button>
+          <el-button type="primary" plain @click="handleOpenExport">
+            导出合同
+          </el-button>
           <el-button type="success" @click="handleCreate">
             <el-icon><Plus /></el-icon>
             新建合同
@@ -58,6 +64,12 @@
         <el-table-column type="selection" width="55" />
         <el-table-column prop="contractNumber" label="合同编号" width="120" />
         <el-table-column prop="contractName" label="合同名称" min-width="200" />
+        <el-table-column prop="customerName" label="客户名称" min-width="160" />
+        <el-table-column
+          prop="companySignatory"
+          label="公司签约主体"
+          min-width="160"
+        />
         <el-table-column prop="contractType" label="合同类型" width="100">
           <template #default="{ row }">
             <el-tag>{{ row.contractType }}</el-tag>
@@ -129,13 +141,71 @@
       :contract-data="currentContract"
       @success="handleFormSuccess"
     />
+
+    <el-dialog
+      v-model="exportDialogVisible"
+      title="导出字段选择"
+      width="540px"
+      :close-on-click-modal="false"
+    >
+      <el-checkbox-group v-model="selectedExportFields" class="export-field-group">
+        <el-checkbox
+          v-for="field in exportFieldOptions"
+          :key="field.value"
+          :label="field.value"
+        >
+          {{ field.label }}
+        </el-checkbox>
+      </el-checkbox-group>
+      <template #footer>
+        <el-button @click="exportDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="exportLoading" @click="handleExportConfirm">
+          导出 Excel
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="importDialogVisible"
+      title="批量上传合同"
+      width="560px"
+      :close-on-click-modal="false"
+    >
+      <el-upload
+        :auto-upload="false"
+        :limit="1"
+        accept=".xlsx,.xls"
+        :file-list="importFileList"
+        :on-change="handleImportFileChange"
+        :on-remove="handleImportFileRemove"
+      >
+        <el-button type="primary">选择Excel文件</el-button>
+        <template #tip>
+          <div class="el-upload__tip">
+            支持 .xlsx/.xls，表头建议使用：合同编号、合同名称、合同类型、合同金额、状态、开始日期、结束日期
+          </div>
+        </template>
+      </el-upload>
+
+      <el-checkbox v-model="importOverwrite" class="import-overwrite">
+        覆盖已存在合同（按合同编号匹配）
+      </el-checkbox>
+
+      <template #footer>
+        <el-button @click="importDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="importLoading" @click="handleImportConfirm">
+          开始上传
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from "vue";
 import { useRouter } from "vue-router";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { ElMessage, ElMessageBox, type UploadFile, type UploadRawFile } from "element-plus";
+import { exportContracts, importContracts } from "@/api/contract";
 import ContractDetailDialog from "./components/ContractDetailDialog.vue";
 import ContractFormDialog from "./components/ContractFormDialog.vue";
 
@@ -143,6 +213,8 @@ interface Contract {
   id: string;
   contractNumber: string;
   contractName: string;
+  customerName?: string;
+  companySignatory?: string;
   contractType: string;
   amount: number;
   status: string;
@@ -164,6 +236,11 @@ interface Pagination {
   total: number;
 }
 
+interface ExportFieldOption {
+  label: string;
+  value: string;
+}
+
 const loading = ref(false);
 const router = useRouter();
 const contractList = ref<Contract[]>([]);
@@ -183,6 +260,29 @@ const detailDialogVisible = ref(false);
 const formDialogVisible = ref(false);
 const currentContractId = ref("");
 const currentContract = ref<Contract | null>(null);
+const exportDialogVisible = ref(false);
+const exportLoading = ref(false);
+const importDialogVisible = ref(false);
+const importLoading = ref(false);
+const importOverwrite = ref(false);
+const importFileList = ref<UploadFile[]>([]);
+const importRawFile = ref<UploadRawFile | null>(null);
+const exportFieldOptions: ExportFieldOption[] = [
+  { label: "合同编号", value: "contractNo" },
+  { label: "合同名称", value: "contractName" },
+  { label: "客户名称", value: "customerName" },
+  { label: "公司签约主体", value: "companySignatory" },
+  { label: "合同类型", value: "contractType" },
+  { label: "合同金额", value: "amount" },
+  { label: "状态", value: "status" },
+  { label: "开始日期", value: "startDate" },
+  { label: "结束日期", value: "endDate" },
+  { label: "创建人", value: "createdBy" },
+  { label: "创建时间", value: "createdAt" },
+];
+const selectedExportFields = ref<string[]>(
+  exportFieldOptions.map((item) => item.value),
+);
 
 // 模拟数据
 const mockContracts: Contract[] = [
@@ -190,6 +290,8 @@ const mockContracts: Contract[] = [
     id: "1",
     contractNumber: "HT20230001",
     contractName: "软件开发服务合同",
+    customerName: "深圳示例客户A",
+    companySignatory: "示例科技有限公司",
     contractType: "技术服务",
     amount: 500000,
     status: "active",
@@ -202,6 +304,8 @@ const mockContracts: Contract[] = [
     id: "2",
     contractNumber: "HT20230002",
     contractName: "设备采购合同",
+    customerName: "上海示例客户B",
+    companySignatory: "示例科技有限公司",
     contractType: "采购",
     amount: 200000,
     status: "draft",
@@ -276,6 +380,114 @@ const handleReset = () => {
 const handleCreate = () => {
   currentContract.value = null;
   formDialogVisible.value = true;
+};
+
+const handleOpenExport = () => {
+  exportDialogVisible.value = true;
+};
+
+const handleOpenImport = () => {
+  importDialogVisible.value = true;
+};
+
+const getFileNameFromContentDisposition = (contentDisposition?: string) => {
+  if (!contentDisposition) {
+    return `合同导出_${Date.now()}.xlsx`;
+  }
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    return decodeURIComponent(utf8Match[1]);
+  }
+  const basicMatch = contentDisposition.match(/filename="?([^"]+)"?/i);
+  if (basicMatch?.[1]) {
+    return basicMatch[1];
+  }
+  return `合同导出_${Date.now()}.xlsx`;
+};
+
+const handleExportConfirm = async () => {
+  if (selectedExportFields.value.length === 0) {
+    ElMessage.warning("请至少选择一个导出字段");
+    return;
+  }
+
+  exportLoading.value = true;
+  try {
+    const params: Record<string, string> = {
+      fields: selectedExportFields.value.join(","),
+    };
+    if (searchParams.keyword) {
+      params.keyword = searchParams.keyword;
+    }
+    if (searchParams.status) {
+      params.status = searchParams.status;
+    }
+    if (searchParams.dateRange?.length === 2) {
+      params.startDate = searchParams.dateRange[0];
+      params.endDate = searchParams.dateRange[1];
+    }
+
+    const response = await exportContracts(params);
+    const blob = new Blob([response.data], {
+      type:
+        response.headers["content-type"] ||
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const fileName = getFileNameFromContentDisposition(
+      response.headers["content-disposition"],
+    );
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+
+    ElMessage.success("导出成功");
+    exportDialogVisible.value = false;
+  } catch (error) {
+    console.error("导出合同失败:", error);
+    ElMessage.error("导出失败，请稍后重试");
+  } finally {
+    exportLoading.value = false;
+  }
+};
+
+const handleImportFileChange = (file: UploadFile, uploadFiles: UploadFile[]) => {
+  importFileList.value = uploadFiles.slice(-1);
+  importRawFile.value = (file.raw || null) as UploadRawFile | null;
+};
+
+const handleImportFileRemove = () => {
+  importRawFile.value = null;
+};
+
+const handleImportConfirm = async () => {
+  if (!importRawFile.value) {
+    ElMessage.warning("请先选择Excel文件");
+    return;
+  }
+  importLoading.value = true;
+  try {
+    const formData = new FormData();
+    formData.append("file", importRawFile.value);
+    const result = await importContracts(formData, importOverwrite.value);
+    ElMessage.success(
+      `导入完成：新增${result.success || 0}，更新${result.updated || 0}，跳过${result.skipped || 0}，失败${result.failed || 0}`,
+    );
+    importDialogVisible.value = false;
+    importFileList.value = [];
+    importRawFile.value = null;
+    importOverwrite.value = false;
+    loadContractList();
+  } catch (error: any) {
+    console.error("批量导入失败:", error);
+    ElMessage.error(error?.response?.data?.message || "批量导入失败，请检查文件格式");
+  } finally {
+    importLoading.value = false;
+  }
 };
 
 const handleView = (row: Contract) => {
@@ -373,5 +585,15 @@ const getStatusText = (status: string) => {
     margin-top: 20px;
     text-align: right;
   }
+}
+
+.export-field-group {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 8px;
+}
+
+.import-overwrite {
+  margin-top: 16px;
 }
 </style>

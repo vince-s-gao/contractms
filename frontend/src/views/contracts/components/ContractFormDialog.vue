@@ -58,7 +58,26 @@
                 :min="0"
                 :precision="2"
                 style="width: 100%"
-                placeholder="请输入合同金额"
+                placeholder="请输入合同金额（选填）"
+              />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="客户名称" prop="customerName">
+              <el-input
+                v-model="formData.customerName"
+                placeholder="请输入客户名称"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="公司签约主体" prop="companySignatory">
+              <el-input
+                v-model="formData.companySignatory"
+                placeholder="请输入公司签约主体"
               />
             </el-form-item>
           </el-col>
@@ -191,7 +210,9 @@ interface ContractFormData {
   contractNumber: string;
   contractName: string;
   contractType: string;
-  amount: number;
+  amount: number | undefined;
+  customerName: string;
+  companySignatory: string;
   startDate: string;
   endDate: string;
   content: string;
@@ -228,7 +249,9 @@ const formData = reactive<ContractFormData>({
   contractNumber: "",
   contractName: "",
   contractType: "",
-  amount: 0,
+  amount: undefined,
+  customerName: "",
+  companySignatory: "",
   startDate: "",
   endDate: "",
   content: "",
@@ -245,7 +268,6 @@ const formRules: FormRules = {
   contractType: [
     { required: true, message: "请选择合同类型", trigger: "change" },
   ],
-  amount: [{ required: true, message: "请输入合同金额", trigger: "blur" }],
   startDate: [{ required: true, message: "请选择开始日期", trigger: "change" }],
   endDate: [{ required: true, message: "请选择结束日期", trigger: "change" }],
 };
@@ -271,7 +293,13 @@ watch(visible, (val) => {
 const loadContractData = () => {
   if (!props.contractData) return;
 
-  Object.assign(formData, props.contractData);
+  Object.assign(formData, {
+    ...props.contractData,
+    customerName:
+      props.contractData.customerName || props.contractData.partyA || "",
+    companySignatory:
+      props.contractData.companySignatory || props.contractData.partyB || "",
+  });
 };
 
 const resetForm = () => {
@@ -280,7 +308,9 @@ const resetForm = () => {
     contractNumber: "",
     contractName: "",
     contractType: "",
-    amount: 0,
+    amount: undefined,
+    customerName: "",
+    companySignatory: "",
     startDate: "",
     endDate: "",
     content: "",
@@ -338,11 +368,8 @@ const handleSubmit = async () => {
       startDate: formData.startDate,
       endDate: formData.endDate,
       description: formData.content,
-      partyName:
-        formData.participants.find((p) => p.role === "对方单位")?.name || "",
-      partyContact:
-        formData.participants.find((p) => p.role === "对方单位")?.department ||
-        "",
+      partyName: formData.customerName || "",
+      partyContact: formData.companySignatory || "",
       partyPhone:
         formData.participants.find((p) => p.role === "对方单位")?.phone || "",
       createdBy: userInfo.id || 1,
