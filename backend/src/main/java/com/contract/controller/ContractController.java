@@ -10,6 +10,8 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -32,6 +34,10 @@ public class ContractController {
     private static final Pattern CONTRACT_TYPE_CODE_PATTERN = Pattern.compile("^[A-Z0-9_]{2,50}$");
     private static final Pattern ENUM_ITEM_PATTERN = Pattern.compile("'([^']*)'");
     private static final Pattern SIGNING_YEAR_PATTERN = Pattern.compile("20\\d{2}");
+    private static final long MAX_ATTACHMENT_SIZE_BYTES = 100L * 1024L * 1024L;
+    private static final Set<String> ALLOWED_ATTACHMENT_EXTENSIONS = Set.of(
+            "pdf", "doc", "docx", "xls", "xlsx", "jpg", "jpeg", "png"
+    );
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -233,6 +239,7 @@ public class ContractController {
     }
 
     @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
     public ResponseEntity<?> importContracts(@RequestPart("file") MultipartFile file,
                                              @RequestParam(defaultValue = "false") boolean overwrite) {
         final List<ContractImportService.ImportRow> rows;
@@ -356,10 +363,11 @@ public class ContractController {
     }
 
     @PostMapping(value = "/{id}/attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
     public ResponseEntity<?> uploadAttachments(@PathVariable Long id,
                                                @RequestPart("files") MultipartFile[] files,
                                                @RequestParam(required = false) String description,
-                                               @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+                                               Authentication authentication) {
         if (!existsContractId(id)) {
             return ResponseEntity.notFound().build();
         }
@@ -368,7 +376,7 @@ public class ContractController {
         }
         ensureContractAttachmentTable();
 
-        Long uploadUserId = userId == null ? 1L : userId;
+        Long uploadUserId = resolveCurrentUserId(authentication);
         Path contractDir = Paths.get(uploadDir, "contracts", String.valueOf(id)).normalize();
         try {
             Files.createDirectories(contractDir);
@@ -382,9 +390,17 @@ public class ContractController {
             if (file == null || file.isEmpty()) {
                 continue;
             }
+            if (file.getSize() > MAX_ATTACHMENT_SIZE_BYTES) {
+                errors.add(Map.of("file", defaultIfBlank(file.getOriginalFilename(), "unknown"), "message", "单个文件不能超过100MB"));
+                continue;
+            }
             String originName = safeFileName(file.getOriginalFilename());
             if (isBlank(originName)) {
                 errors.add(Map.of("file", "unknown", "message", "文件名无效"));
+                continue;
+            }
+            if (!isAllowedAttachmentExtension(originName)) {
+                errors.add(Map.of("file", originName, "message", "文件类型不支持"));
                 continue;
             }
             String extension = "";
@@ -514,6 +530,7 @@ public class ContractController {
     }
 
     @DeleteMapping("/{id}/attachments/{attachmentId}")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
     public ResponseEntity<?> deleteAttachment(@PathVariable Long id, @PathVariable Long attachmentId) {
         ensureContractAttachmentTable();
         List<Map<String, Object>> rows;
@@ -637,6 +654,7 @@ public class ContractController {
     }
 
     @PostMapping
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
     public ResponseEntity<?> create(@RequestBody Map<String, Object> request) {
         String contractNo = asString(request.get("contractNo"));
         String contractName = asString(request.get("contractName"));
@@ -682,6 +700,7 @@ public class ContractController {
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
     public ResponseEntity<?> update(@PathVariable Long id, @RequestBody Map<String, Object> request) {
         List<Map<String, Object>> existed = jdbcTemplate.queryForList(
                 "SELECT id, contract_no FROM contracts WHERE id = ?", id);
@@ -738,6 +757,7 @@ public class ContractController {
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:delete')")
     public ResponseEntity<?> delete(@PathVariable Long id) {
         int affected = jdbcTemplate.update("DELETE FROM contracts WHERE id = ?", id);
         if (affected == 0) {
@@ -747,6 +767,7 @@ public class ContractController {
     }
 
     @PostMapping("/{id}/submit")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:approval')")
     public ResponseEntity<?> submit(@PathVariable Long id) {
         int affected = jdbcTemplate.update(
                 "UPDATE contracts SET status = 'PENDING', updated_time = NOW() WHERE id = ?", id);
@@ -757,6 +778,7 @@ public class ContractController {
     }
 
     @PostMapping("/{id}/approve")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_APPROVAL_MANAGER') or hasAuthority('contract:approval')")
     public ResponseEntity<?> approve(@PathVariable Long id,
                                      @RequestParam boolean approved,
                                      @RequestParam(required = false) String comment) {
@@ -776,6 +798,7 @@ public class ContractController {
     }
 
     @PutMapping("/{id}/status")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_APPROVAL_MANAGER') or hasAuthority('contract:approval')")
     public ResponseEntity<?> updateStatus(@PathVariable Long id, @RequestParam String status) {
         String mapped = toContractDbStatus(status);
         int affected = jdbcTemplate.update(
@@ -925,6 +948,35 @@ public class ContractController {
         result.put("salesRevenue", asBigDecimal(row.get("salesRevenue")));
         result.put("purchaseCost", asBigDecimal(row.get("purchaseCost")));
         result.put("newThisMonth", asInt(row.get("newThisMonth")));
+
+        ensureContractTypeMetaTable();
+        Map<String, String> typeNameMap = getContractTypeMetaNames();
+        StringBuilder typeCountSql = new StringBuilder("""
+                SELECT contract_type AS code, COUNT(*) AS count
+                FROM contracts
+                WHERE 1=1
+                """);
+        List<Object> typeParams = new ArrayList<>();
+        if (year != null) {
+            typeCountSql.append(" AND signing_year = ?");
+            typeParams.add(year);
+        }
+        typeCountSql.append(" GROUP BY contract_type ORDER BY count DESC, code ASC");
+        List<Map<String, Object>> typeRows = jdbcTemplate.queryForList(typeCountSql.toString(), typeParams.toArray());
+        List<Map<String, Object>> contractTypeStats = new ArrayList<>();
+        for (Map<String, Object> typeRow : typeRows) {
+            String code = normalizeContractTypeCode(asString(typeRow.get("code")));
+            int count = asInt(typeRow.get("count"));
+            if (isBlank(code)) {
+                continue;
+            }
+            contractTypeStats.add(Map.of(
+                    "code", code,
+                    "name", typeNameMap.getOrDefault(code, defaultContractTypeName(code)),
+                    "count", count
+            ));
+        }
+        result.put("contractTypeStats", contractTypeStats);
         return ResponseEntity.ok(result);
     }
 
@@ -948,6 +1000,7 @@ public class ContractController {
     }
 
     @PostMapping("/types")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
     public ResponseEntity<?> createContractType(@RequestBody Map<String, Object> request) {
         ensureContractTypeMetaTable();
         String code = normalizeContractTypeCode(asString(request.get("code")));
@@ -969,6 +1022,7 @@ public class ContractController {
     }
 
     @PutMapping("/types/{code}")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
     public ResponseEntity<?> updateContractType(@PathVariable String code,
                                                 @RequestBody Map<String, Object> request) {
         ensureContractTypeMetaTable();
@@ -1007,6 +1061,7 @@ public class ContractController {
     }
 
     @DeleteMapping("/types/{code}")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
     public ResponseEntity<?> deleteContractType(@PathVariable String code) {
         ensureContractTypeMetaTable();
         String typeCode = normalizeContractTypeCode(code);
@@ -1168,7 +1223,20 @@ public class ContractController {
         if (slash >= 0) {
             normalized = normalized.substring(slash + 1);
         }
-        return normalized.trim();
+        String trimmed = normalized.trim();
+        if (trimmed.contains("..") || trimmed.contains("/") || trimmed.contains("\0")) {
+            return null;
+        }
+        return trimmed;
+    }
+
+    private static boolean isAllowedAttachmentExtension(String fileName) {
+        int dotIndex = fileName.lastIndexOf('.');
+        if (dotIndex < 0 || dotIndex == fileName.length() - 1) {
+            return false;
+        }
+        String ext = fileName.substring(dotIndex + 1).toLowerCase(Locale.ROOT);
+        return ALLOWED_ATTACHMENT_EXTENSIONS.contains(ext);
     }
 
     private boolean hasColumn(String tableName, String columnName) {
@@ -1432,6 +1500,21 @@ public class ContractController {
         }
         Number number = (Number) rows.get(0).get("id");
         return number == null ? null : number.longValue();
+    }
+
+    private Long resolveCurrentUserId(Authentication authentication) {
+        if (authentication == null || authentication.getName() == null || authentication.getName().isBlank()) {
+            return 1L;
+        }
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT id FROM users WHERE username = ? LIMIT 1",
+                authentication.getName()
+        );
+        if (rows.isEmpty()) {
+            return 1L;
+        }
+        Object value = rows.get(0).get("id");
+        return asLong(value, 1L);
     }
 
     private String generateImportContractNo(int rowNumber) {

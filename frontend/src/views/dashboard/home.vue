@@ -74,6 +74,68 @@
 
     <el-card shadow="never">
       <template #header>
+        <span>合同类型分布</span>
+      </template>
+      <div v-if="contractTypeStats.length" class="type-pie-wrap">
+        <div class="type-pie-chart">
+          <svg :viewBox="`0 0 ${pieViewWidth} ${pieViewHeight}`" class="pie-svg">
+            <circle
+              :cx="pieCenterX"
+              :cy="pieCenterY"
+              :r="pieRadius"
+              fill="none"
+              stroke="#f2f3f5"
+              :stroke-width="pieStrokeWidth"
+            />
+            <circle
+              v-for="segment in pieSegments"
+              :key="segment.code"
+              :cx="pieCenterX"
+              :cy="pieCenterY"
+              :r="pieRadius"
+              fill="none"
+              :stroke="segment.color"
+              :stroke-width="pieStrokeWidth"
+              stroke-linecap="butt"
+              :transform="`rotate(-90 ${pieCenterX} ${pieCenterY})`"
+              :stroke-dasharray="`${segment.length} ${pieCircumference - segment.length}`"
+              :stroke-dashoffset="`-${segment.offset}`"
+            />
+            <g v-for="segment in pieSegments" :key="`${segment.code}-label`">
+              <line
+                :x1="segment.lineStartX"
+                :y1="segment.lineStartY"
+                :x2="segment.lineMidX"
+                :y2="segment.lineMidY"
+                :stroke="segment.color"
+                stroke-width="1.2"
+              />
+              <line
+                :x1="segment.lineMidX"
+                :y1="segment.lineMidY"
+                :x2="segment.lineEndX"
+                :y2="segment.lineEndY"
+                :stroke="segment.color"
+                stroke-width="1.2"
+              />
+              <circle :cx="segment.lineStartX" :cy="segment.lineStartY" r="2" :fill="segment.color" />
+              <text
+                :x="segment.textX"
+                :y="segment.textY"
+                :text-anchor="segment.textAnchor"
+                class="pie-label-text"
+              >
+                {{ segment.name }} {{ segment.count }}份（{{ segment.percentText }}）
+              </text>
+            </g>
+          </svg>
+        </div>
+      </div>
+      <el-empty v-else description="暂无合同类型数据" :image-size="72" />
+    </el-card>
+
+    <el-card shadow="never" class="mt-16">
+      <template #header>
         <span>系统概览</span>
       </template>
       <p class="hint">
@@ -95,6 +157,60 @@ const metrics = reactive({
   newThisMonth: 0,
   salesRevenue: 0,
   purchaseCost: 0,
+});
+const contractTypeStats = ref<Array<{ code: string; name: string; count: number }>>([]);
+const pieColors = ["#409EFF", "#67C23A", "#E6A23C", "#F56C6C", "#8E44AD", "#16A085", "#34495E", "#D35400"];
+const pieViewWidth = 560;
+const pieViewHeight = 280;
+const pieCenterX = 280;
+const pieCenterY = 140;
+const pieRadius = 52;
+const pieStrokeWidth = 24;
+const pieCircumference = 2 * Math.PI * pieRadius;
+const pieTotal = computed(() =>
+  contractTypeStats.value.reduce((sum, item) => sum + Number(item.count || 0), 0),
+);
+const pieSegments = computed(() => {
+  let offset = 0;
+  return contractTypeStats.value.map((item, index) => {
+    const count = Number(item.count || 0);
+    const ratio = pieTotal.value > 0 ? count / pieTotal.value : 0;
+    const length = ratio * pieCircumference;
+    const segment = {
+      code: item.code,
+      name: item.name,
+      count,
+      color: pieColors[index % pieColors.length],
+      offset,
+      length,
+      percentText: `${(ratio * 100).toFixed(1)}%`,
+      lineStartX: 0,
+      lineStartY: 0,
+      lineMidX: 0,
+      lineMidY: 0,
+      lineEndX: 0,
+      lineEndY: 0,
+      textX: 0,
+      textY: 0,
+      textAnchor: "start" as "start" | "end",
+    };
+    const midRatio = pieCircumference === 0 ? 0 : (segment.offset + segment.length / 2) / pieCircumference;
+    const angle = -Math.PI / 2 + Math.PI * 2 * midRatio;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    segment.lineStartX = pieCenterX + cos * (pieRadius + pieStrokeWidth / 2);
+    segment.lineStartY = pieCenterY + sin * (pieRadius + pieStrokeWidth / 2);
+    segment.lineMidX = pieCenterX + cos * (pieRadius + pieStrokeWidth / 2 + 18);
+    segment.lineMidY = pieCenterY + sin * (pieRadius + pieStrokeWidth / 2 + 18);
+    const horizontal = cos >= 0 ? 18 : -18;
+    segment.lineEndX = segment.lineMidX + horizontal;
+    segment.lineEndY = segment.lineMidY;
+    segment.textX = segment.lineEndX + (cos >= 0 ? 4 : -4);
+    segment.textY = segment.lineEndY + 4;
+    segment.textAnchor = cos >= 0 ? "start" : "end";
+    offset += length;
+    return segment;
+  });
 });
 
 const router = useRouter();
@@ -138,6 +254,13 @@ const loadOverview = async () => {
     metrics.newThisMonth = Number(data.newThisMonth || 0);
     metrics.salesRevenue = Number(data.salesRevenue || 0);
     metrics.purchaseCost = Number(data.purchaseCost || 0);
+    contractTypeStats.value = Array.isArray(data.contractTypeStats)
+      ? data.contractTypeStats.map((item: any) => ({
+          code: String(item.code || ""),
+          name: String(item.name || item.code || "-"),
+          count: Number(item.count || 0),
+        }))
+      : [];
   } catch (error) {
     console.error("加载仪表板数据失败:", error);
     ElMessage.error("加载仪表板数据失败");
@@ -160,6 +283,9 @@ const formatCurrency = (value: number) => {
 .dashboard-home {
   .mb-16 {
     margin-bottom: 16px;
+  }
+  .mt-16 {
+    margin-top: 16px;
   }
 
   .metric {
@@ -199,6 +325,29 @@ const formatCurrency = (value: number) => {
   .hint {
     color: #606266;
     line-height: 1.8;
+  }
+
+  .type-pie-wrap {
+    display: flex;
+    justify-content: center;
+  }
+
+  .type-pie-chart {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .pie-svg {
+    width: min(100%, 980px);
+    height: auto;
+    overflow: visible;
+  }
+
+  .pie-label-text {
+    fill: #606266;
+    font-size: 12px;
   }
 }
 </style>

@@ -198,9 +198,12 @@ const handleLogin = async () => {
     }
 
     const data = await response.json();
+    if (!data?.token) {
+      throw new Error("登录响应缺少令牌");
+    }
 
     // 存储用户信息和token
-    localStorage.setItem("token", data.token || "demo-token");
+    localStorage.setItem("token", data.token);
     localStorage.setItem(
       "userInfo",
       JSON.stringify(

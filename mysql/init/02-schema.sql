@@ -123,6 +123,8 @@ CREATE TABLE IF NOT EXISTS contracts (
     INDEX idx_contract_no (contract_no),
     INDEX idx_status (status),
     INDEX idx_contract_type (contract_type),
+    INDEX idx_signing_year (signing_year),
+    INDEX idx_party_a (party_a),
     INDEX idx_dates (start_date, end_date),
     INDEX idx_created_by (created_by),
     FOREIGN KEY (created_by) REFERENCES users(id),

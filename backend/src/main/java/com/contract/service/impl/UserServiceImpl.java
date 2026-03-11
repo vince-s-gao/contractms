@@ -12,8 +12,12 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 @Service
 @Transactional
@@ -38,17 +42,34 @@ public class UserServiceImpl implements UserService {
             throw new UsernameNotFoundException("用户已被禁用: " + username);
         }
         
-        // 获取用户角色
-        String role = "ROLE_USER";
-        if (user.getRole() != null) {
-            role = "ROLE_" + user.getRole().getRoleCode();
-        }
-        
+        Collection<GrantedAuthority> authorities = buildAuthorities(user);
+
         return org.springframework.security.core.userdetails.User.builder()
                 .username(user.getUsername())
                 .password(user.getPassword())
-                .authorities(role)
+                .authorities(authorities)
                 .build();
+    }
+
+    private static Collection<GrantedAuthority> buildAuthorities(User user) {
+        List<GrantedAuthority> authorities = new ArrayList<>();
+
+        String roleCode = "ROLE_USER";
+        if (user.getRole() != null && user.getRole().getRoleCode() != null) {
+            String raw = user.getRole().getRoleCode().trim().toUpperCase(Locale.ROOT);
+            roleCode = raw.startsWith("ROLE_") ? raw : "ROLE_" + raw;
+        }
+        authorities.add(new SimpleGrantedAuthority(roleCode));
+
+        if (user.getRole() != null && user.getRole().getPermissions() != null) {
+            for (String item : user.getRole().getPermissions().split(",")) {
+                String code = item == null ? "" : item.trim();
+                if (!code.isEmpty()) {
+                    authorities.add(new SimpleGrantedAuthority(code));
+                }
+            }
+        }
+        return authorities;
     }
     
     @Override

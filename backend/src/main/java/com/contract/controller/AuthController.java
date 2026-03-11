@@ -27,7 +27,6 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/auth")
-@CrossOrigin(origins = "*")
 public class AuthController {
     
     @Value("${jwt.secret}")
@@ -62,8 +61,18 @@ public class AuthController {
             String token = generateToken(loginRequest.getUsername());
             
             Map<String, Object> response = new HashMap<>();
+            User user = userService.getUserByUsername(loginRequest.getUsername());
+            String roleCode = "USER";
+            if (user.getRole() != null && user.getRole().getRoleCode() != null) {
+                roleCode = user.getRole().getRoleCode();
+            }
             response.put("token", token);
             response.put("username", loginRequest.getUsername());
+            response.put("user", Map.of(
+                    "id", user.getId(),
+                    "username", user.getUsername(),
+                    "role", roleCode
+            ));
             response.put("expiresIn", jwtExpiration);
             response.put("message", "登录成功");
             
