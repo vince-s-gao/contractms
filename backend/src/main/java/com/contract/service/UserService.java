@@ -8,6 +8,7 @@ import java.util.List;
 public interface UserService extends UserDetailsService {
     
     User createUser(User user);
+    User registerWithUsername(String username, String password);
     
     User updateUser(Long id, User user);
     

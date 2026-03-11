@@ -13,7 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.Optional;
+import java.util.Locale;
 
 @Service
 @Transactional
@@ -30,7 +30,7 @@ public class UserServiceImpl implements UserService {
     
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        User user = userRepository.findByUsername(username)
+        User user = userRepository.findByUsernameIgnoreCase(username)
                 .orElseThrow(() -> new UsernameNotFoundException("用户不存在: " + username));
         
         // 检查用户是否被禁用（enabled字段为false或0时禁用）
@@ -73,6 +73,30 @@ public class UserServiceImpl implements UserService {
                 });
         user.setRole(defaultRole);
         
+        return userRepository.save(user);
+    }
+
+    @Override
+    public User registerWithUsername(String username, String password) {
+        String normalizedUsername = username == null ? null : username.trim().toLowerCase(Locale.ROOT);
+        if (existsByUsername(normalizedUsername)) {
+            throw new RuntimeException("用户名已存在");
+        }
+
+        User user = new User();
+        user.setUsername(normalizedUsername);
+        user.setPassword(passwordEncoder.encode(password));
+        user.setRealName(normalizedUsername);
+        user.setEmail(normalizedUsername + "+" + System.currentTimeMillis() + "@local.contractms");
+        user.setDepartment("默认部门");
+        user.setEnabled(true);
+        user.setUpdateTime(java.time.LocalDateTime.now());
+
+        Role defaultRole = roleRepository.findByRoleCodeIgnoreCase("USER")
+                .or(() -> roleRepository.findByRoleCodeIgnoreCase("ROLE_USER"))
+                .or(() -> roleRepository.findByName("普通用户"))
+                .orElseThrow(() -> new RuntimeException("默认角色不存在，请先初始化角色数据"));
+        user.setRole(defaultRole);
         return userRepository.save(user);
     }
     
@@ -134,7 +158,7 @@ public class UserServiceImpl implements UserService {
     
     @Override
     public boolean existsByUsername(String username) {
-        return userRepository.existsByUsername(username);
+        return userRepository.existsByUsernameIgnoreCase(username);
     }
     
     @Override

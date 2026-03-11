@@ -5,6 +5,9 @@ import com.contract.service.UserService;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +22,7 @@ import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 
 @RestController
@@ -72,12 +76,16 @@ public class AuthController {
     }
     
     @PostMapping("/register")
-    public ResponseEntity<?> register(@Valid @RequestBody User user) {
+    public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest registerRequest) {
         try {
-            User createdUser = userService.createUser(user);
+            if (!registerRequest.getPassword().equals(registerRequest.getConfirmPassword())) {
+                return ResponseEntity.badRequest().body(Map.of("message", "两次输入的密码不一致"));
+            }
+            String username = registerRequest.getUsername().trim().toLowerCase(Locale.ROOT);
+            User createdUser = userService.registerWithUsername(username, registerRequest.getPassword());
             
             Map<String, Object> response = new HashMap<>();
-            response.put("message", "用户注册成功");
+            response.put("message", "注册成功");
             response.put("userId", createdUser.getId());
             response.put("username", createdUser.getUsername());
             
@@ -126,5 +134,47 @@ public class AuthController {
         
         public String getPassword() { return password; }
         public void setPassword(String password) { this.password = password; }
+    }
+
+    public static class RegisterRequest {
+        @NotBlank(message = "用户名不能为空")
+        @Size(min = 4, max = 20, message = "用户名长度需为4-20位")
+        @Pattern(regexp = "^[a-zA-Z0-9_]+$", message = "用户名仅支持字母、数字、下划线")
+        private String username;
+
+        @NotBlank(message = "密码不能为空")
+        @Size(min = 8, max = 32, message = "密码长度需为8-32位")
+        @Pattern(
+                regexp = "^(?=.*[A-Za-z])(?=.*\\d)[A-Za-z\\d_\\-!@#$%^&*().,?]{8,32}$",
+                message = "密码需包含字母和数字"
+        )
+        private String password;
+
+        @NotBlank(message = "确认密码不能为空")
+        private String confirmPassword;
+
+        public String getUsername() {
+            return username;
+        }
+
+        public void setUsername(String username) {
+            this.username = username;
+        }
+
+        public String getPassword() {
+            return password;
+        }
+
+        public void setPassword(String password) {
+            this.password = password;
+        }
+
+        public String getConfirmPassword() {
+            return confirmPassword;
+        }
+
+        public void setConfirmPassword(String confirmPassword) {
+            this.confirmPassword = confirmPassword;
+        }
     }
 }

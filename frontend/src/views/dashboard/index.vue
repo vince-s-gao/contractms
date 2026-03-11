@@ -48,6 +48,10 @@
             <el-icon><Check /></el-icon>
             <span>合同审批</span>
           </el-menu-item>
+          <el-menu-item index="/permissions">
+            <el-icon><Setting /></el-icon>
+            <span>权限管理</span>
+          </el-menu-item>
         </el-menu>
       </el-aside>
 
@@ -63,6 +67,7 @@
 import { computed, ref, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
+import { Setting } from "@element-plus/icons-vue";
 
 interface UserInfo {
   username: string;

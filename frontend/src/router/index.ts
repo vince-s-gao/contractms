@@ -41,6 +41,15 @@ const routes: RouteRecordRaw[] = [
           requiresAuth: true,
         },
       },
+      {
+        path: "permissions",
+        name: "Permissions",
+        component: () => import("@/views/permissions/index.vue"),
+        meta: {
+          title: "权限管理",
+          requiresAuth: true,
+        },
+      },
     ],
   },
   {

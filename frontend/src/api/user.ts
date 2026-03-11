@@ -26,6 +26,12 @@ export interface LoginResponse {
   token: string;
 }
 
+export interface RegisterRequest {
+  username: string;
+  password: string;
+  confirmPassword: string;
+}
+
 // 用户登录
 export const login = (data: LoginRequest): Promise<LoginResponse> => {
   return request({
@@ -36,7 +42,7 @@ export const login = (data: LoginRequest): Promise<LoginResponse> => {
 };
 
 // 用户注册
-export const register = (data: User) => {
+export const register = (data: RegisterRequest) => {
   return request({
     url: "/auth/register",
     method: "post",
