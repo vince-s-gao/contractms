@@ -581,6 +581,36 @@ public class ContractController {
         return ResponseEntity.ok(Map.of("totalAmount", total == null ? BigDecimal.ZERO : total));
     }
 
+    @GetMapping("/statistics/overview")
+    public ResponseEntity<?> getOverview(@RequestParam(required = false, name = "year") Integer year) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT COUNT(*) AS totalContracts,
+                       SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END) AS approvingContracts,
+                       SUM(CASE WHEN status IN ('APPROVED', 'EXECUTING', 'COMPLETED') THEN 1 ELSE 0 END) AS activeContracts,
+                       SUM(CASE WHEN contract_type = 'SALES' THEN COALESCE(amount, 0) ELSE 0 END) AS salesRevenue,
+                       SUM(CASE WHEN contract_type = 'PURCHASE' THEN COALESCE(amount, 0) ELSE 0 END) AS purchaseCost,
+                       SUM(CASE WHEN created_time >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
+                                 AND created_time < DATE_ADD(LAST_DAY(CURDATE()), INTERVAL 1 DAY)
+                                THEN 1 ELSE 0 END) AS newThisMonth
+                FROM contracts
+                WHERE 1=1
+                """);
+        List<Object> params = new ArrayList<>();
+        if (year != null) {
+            sql.append(" AND signing_year = ?");
+            params.add(year);
+        }
+        Map<String, Object> row = jdbcTemplate.queryForMap(sql.toString(), params.toArray());
+        Map<String, Object> result = new HashMap<>();
+        result.put("totalContracts", asInt(row.get("totalContracts")));
+        result.put("approvingContracts", asInt(row.get("approvingContracts")));
+        result.put("activeContracts", asInt(row.get("activeContracts")));
+        result.put("salesRevenue", asBigDecimal(row.get("salesRevenue")));
+        result.put("purchaseCost", asBigDecimal(row.get("purchaseCost")));
+        result.put("newThisMonth", asInt(row.get("newThisMonth")));
+        return ResponseEntity.ok(result);
+    }
+
     @GetMapping("/check-unique")
     public ResponseEntity<?> checkUnique(@RequestParam String contractNo,
                                          @RequestParam(required = false) Long excludeId) {
@@ -914,6 +944,20 @@ public class ContractController {
             return Long.parseLong(value.toString());
         } catch (Exception e) {
             return defaultValue;
+        }
+    }
+
+    private static int asInt(Object value) {
+        if (value == null) {
+            return 0;
+        }
+        if (value instanceof Number n) {
+            return n.intValue();
+        }
+        try {
+            return Integer.parseInt(value.toString());
+        } catch (Exception e) {
+            return 0;
         }
     }
 
