@@ -26,12 +26,28 @@ export interface Contract {
   updatedAt?: string;
 }
 
+export interface ContractUpsertPayload {
+  contractNo: string;
+  contractName: string;
+  contractType: string;
+  amount?: number;
+  taxRate?: number;
+  startDate: string;
+  endDate: string;
+  description?: string;
+  partyName?: string;
+  partyContact?: string;
+  partyPhone?: string;
+  createdBy?: string | number;
+}
+
 export interface ContractQueryParams {
   page?: number;
   size?: number;
   keyword?: string;
   customerName?: string;
   signingYear?: number;
+  signingYears?: string;
   contractNo?: string;
   contractName?: string;
   contractType?: string;
@@ -40,6 +56,8 @@ export interface ContractQueryParams {
   startDate?: string;
   endDate?: string;
   ownerId?: string;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
 }
 
 export interface ContractExportParams {
@@ -55,12 +73,57 @@ export interface ContractTypeItem {
   name: string;
 }
 
+export interface ContractOverviewItem {
+  code: string;
+  name: string;
+  count: number;
+}
+
+export interface TopCustomerRevenueItem {
+  rank: number;
+  customerName: string;
+  contractCount: number;
+  revenue: number;
+}
+
+export interface ContractOverview {
+  totalContracts: number;
+  approvingContracts: number;
+  activeContracts: number;
+  newThisMonth: number;
+  salesRevenue: number;
+  purchaseCost: number;
+  top5CustomerRevenueShare?: number;
+  contractTypeStats?: ContractOverviewItem[];
+  topCustomerRevenue?: TopCustomerRevenueItem[];
+}
+
 export interface ContractAttachment {
   id: number;
   name: string;
   size: number;
   fileType?: string;
   uploadTime: string;
+}
+
+export interface ApprovalQueryParams {
+  status?: string;
+  approvalStatus?: string;
+  page?: number;
+  size?: number;
+}
+
+export interface ApprovalTaskItem {
+  id: string | number;
+  contractId: string | number;
+  contractNo?: string;
+  contractName?: string;
+  contractType?: string;
+  amount?: number;
+  approvalStatus?: string;
+  applicantName?: string;
+  createdAt?: string;
+  description?: string;
 }
 
 // 获取合同列表
@@ -89,7 +152,7 @@ export const getContractByNo = (contractNo: string) => {
 };
 
 // 创建合同
-export const createContract = (data: Contract) => {
+export const createContract = (data: ContractUpsertPayload) => {
   return request({
     url: "/contracts",
     method: "post",
@@ -98,7 +161,7 @@ export const createContract = (data: Contract) => {
 };
 
 // 更新合同
-export const updateContract = (id: string, data: Contract) => {
+export const updateContract = (id: string, data: ContractUpsertPayload) => {
   return request({
     url: `/contracts/${id}`,
     method: "put",
@@ -200,6 +263,29 @@ export const getContractTypes = () => {
   return request({
     url: "/contracts/types",
     method: "get",
+  });
+};
+
+export const getSigningYears = () => {
+  return request({
+    url: "/contracts/signing-years",
+    method: "get",
+  });
+};
+
+export const getContractOverview = (params?: { year?: number }) => {
+  return request({
+    url: "/contracts/statistics/overview",
+    method: "get",
+    params,
+  });
+};
+
+export const getApprovalTasks = (params: ApprovalQueryParams) => {
+  return request({
+    url: "/contracts/approvals",
+    method: "get",
+    params,
   });
 };
 

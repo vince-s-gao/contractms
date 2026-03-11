@@ -47,9 +47,14 @@ interface ApprovalFormData {
   comment: string;
 }
 
+interface ApprovalDialogTask {
+  id: string;
+  contractName: string;
+}
+
 const props = defineProps<{
   modelValue: boolean;
-  task?: any;
+  task?: ApprovalDialogTask | null;
   action: string;
 }>();
 

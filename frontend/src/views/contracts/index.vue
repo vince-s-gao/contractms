@@ -260,19 +260,23 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed } from "vue";
-import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox, type UploadFile, type UploadRawFile } from "element-plus";
 import {
+  deleteContract,
   createContractType,
   deleteContractType,
   exportContracts,
+  getContracts,
+  getSigningYears,
   getContractTypes,
   importContracts,
   updateContractType,
+  type ContractQueryParams,
   type ContractTypeItem,
 } from "@/api/contract";
 import ContractDetailDialog from "./components/ContractDetailDialog.vue";
 import ContractFormDialog from "./components/ContractFormDialog.vue";
+import { extractErrorMessage } from "@/utils/error";
 
 interface Contract {
   id: string;
@@ -319,7 +323,6 @@ interface ContractTypeForm {
 }
 
 const loading = ref(false);
-const router = useRouter();
 const contractList = ref<Contract[]>([]);
 const searchParams = reactive<SearchParams>({
   keyword: "",
@@ -408,20 +411,9 @@ const loadContractTypeList = async () => {
 
 const loadSigningYearOptions = async () => {
   try {
-    const token = localStorage.getItem("token");
-    const response = await fetch("/api/contracts/signing-years", {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-    });
-    if (!response.ok) {
-      throw new Error("加载签约年份失败");
-    }
-    const data = await response.json();
-    signingYearOptions.value = (data.records || data.data || [])
-      .map((item: any) => Number(item))
+    const response = await getSigningYears();
+    signingYearOptions.value = (response.records || response.data || [])
+      .map((item: unknown) => Number(item))
       .filter((item: number) => Number.isInteger(item));
   } catch (error) {
     console.error("加载签约年份失败:", error);
@@ -433,56 +425,33 @@ const loadContractList = async () => {
   loading.value = true;
 
   try {
-    const query = new URLSearchParams({
-      page: String(pagination.current),
-      size: String(pagination.size),
-    });
+    const params: ContractQueryParams = {
+      page: pagination.current,
+      size: pagination.size,
+    };
     if (searchParams.keyword) {
-      query.append("keyword", searchParams.keyword);
+      params.keyword = searchParams.keyword;
     }
     if (searchParams.customerName) {
-      query.append("customerName", searchParams.customerName);
+      params.customerName = searchParams.customerName;
     }
     if (searchParams.contractType) {
-      query.append("contractType", searchParams.contractType);
+      params.contractType = searchParams.contractType;
     }
     if (searchParams.signingYears.length > 0) {
-      query.append("signingYears", searchParams.signingYears.join(","));
+      params.signingYears = searchParams.signingYears.join(",");
     }
     if (sortState.prop && sortState.order) {
-      query.append("sortBy", sortState.prop);
-      query.append("sortOrder", sortState.order === "ascending" ? "asc" : "desc");
+      params.sortBy = sortState.prop;
+      params.sortOrder = sortState.order === "ascending" ? "asc" : "desc";
     }
 
-    // 调用真实API获取合同列表
-    const token = localStorage.getItem("token");
-    const response = await fetch(`/api/contracts?${query.toString()}`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-    });
-
-    if (response.status === 401 || response.status === 403) {
-      // 未授权，跳转到登录页
-      ElMessage.error("登录已过期，请重新登录");
-      localStorage.removeItem("token");
-      localStorage.removeItem("userInfo");
-      router.push("/login");
-      return;
-    }
-
-    if (!response.ok) {
-      throw new Error("获取合同列表失败");
-    }
-
-    const data = await response.json();
+    const data = await getContracts(params);
     contractList.value = data.records || data.data || [];
     pagination.total = data.total || data.data?.length || 0;
   } catch (error) {
     console.error("加载合同列表错误:", error);
-    ElMessage.error("加载合同列表失败");
+    ElMessage.error(extractErrorMessage(error, "加载合同列表失败"));
   } finally {
     loading.value = false;
   }
@@ -621,9 +590,9 @@ const handleImportConfirm = async () => {
     importOverwrite.value = false;
     pagination.current = 1;
     await loadContractList();
-  } catch (error: any) {
+  } catch (error) {
     console.error("批量导入失败:", error);
-    ElMessage.error(error?.response?.data?.message || "批量导入失败，请检查文件格式");
+    ElMessage.error(extractErrorMessage(error, "批量导入失败，请检查文件格式"));
   } finally {
     importLoading.value = false;
   }
@@ -651,36 +620,16 @@ const handleDelete = async (row: Contract) => {
       },
     );
 
-    const token = localStorage.getItem("token");
-    const response = await fetch(`/api/contracts/${row.id}`, {
-      method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-    });
-
-    if (response.status === 401) {
-      ElMessage.error("登录已过期，请重新登录");
-      localStorage.removeItem("token");
-      localStorage.removeItem("userInfo");
-      router.push("/login");
-      return;
-    }
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || "删除失败");
-    }
+    await deleteContract(row.id);
 
     ElMessage.success("删除成功");
     await loadContractList();
-  } catch (error: any) {
+  } catch (error) {
     if (error === "cancel" || error === "close") {
       return;
     }
     console.error("删除合同失败:", error);
-    ElMessage.error(error?.message || "删除合同失败");
+    ElMessage.error(extractErrorMessage(error, "删除合同失败"));
   }
 };
 
@@ -726,9 +675,9 @@ const handleSaveType = async () => {
     }
     await loadContractTypeList();
     resetTypeForm();
-  } catch (error: any) {
+  } catch (error) {
     console.error("保存合同类型失败:", error);
-    const message = error?.response?.data?.message || "保存合同类型失败";
+    const message = extractErrorMessage(error, "保存合同类型失败");
     if (String(message).includes("已存在")) {
       await loadContractTypeList();
       ElMessage.warning("该类型已存在，已刷新列表");
@@ -757,12 +706,12 @@ const handleDeleteType = async (row: ContractTypeItem) => {
     if (editingTypeCode.value === row.code) {
       resetTypeForm();
     }
-  } catch (error: any) {
+  } catch (error) {
     if (error === "cancel" || error === "close") {
       return;
     }
     console.error("删除合同类型失败:", error);
-    ElMessage.error(error?.response?.data?.message || "删除合同类型失败");
+    ElMessage.error(extractErrorMessage(error, "删除合同类型失败"));
   }
 };
 

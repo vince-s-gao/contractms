@@ -128,10 +128,11 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from "vue";
-import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import ApprovalDialog from "./components/ApprovalDialog.vue";
 import ContractDetailDialog from "../contracts/components/ContractDetailDialog.vue";
+import { getApprovalTasks, type ApprovalTaskItem } from "@/api/contract";
+import { extractErrorMessage } from "@/utils/error";
 
 interface ApprovalTask {
   id: string;
@@ -153,7 +154,6 @@ interface FilterParams {
 }
 
 const loading = ref(false);
-const router = useRouter();
 const approvalTasks = ref<ApprovalTask[]>([]);
 const filterParams = reactive<FilterParams>({
   type: "pending",
@@ -206,67 +206,37 @@ const loadApprovalTasks = async () => {
   loading.value = true;
 
   try {
-    const token = localStorage.getItem("token");
-    const userInfo = JSON.parse(localStorage.getItem("userInfo") || "{}");
-
-    // 构建查询参数
-    const params = new URLSearchParams();
+    const params: { status?: string; approvalStatus?: string } = {};
     if (filterParams.type === "pending") {
-      params.append("status", "PENDING");
+      params.status = "PENDING";
     } else if (filterParams.type === "processed") {
-      params.append("status", "APPROVED,REJECTED");
+      params.status = "APPROVED,REJECTED";
     }
 
     if (filterParams.status) {
-      params.append("approvalStatus", filterParams.status.toUpperCase());
+      params.approvalStatus = filterParams.status.toUpperCase();
     }
 
-    // 调用真实API获取审批任务
-    const response = await fetch(
-      `/api/contracts/approvals?${params.toString()}`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-          "X-User-Id": userInfo.id || "1",
-        },
-      },
-    );
-
-    if (response.status === 401) {
-      ElMessage.error("登录已过期，请重新登录");
-      localStorage.removeItem("token");
-      localStorage.removeItem("userInfo");
-      router.push("/login");
-      return;
-    }
-
-    if (!response.ok) {
-      throw new Error("获取审批任务失败");
-    }
-
-    const data = await response.json();
+    const data = await getApprovalTasks(params);
+    const records = (data.records || data.data || []) as ApprovalTaskItem[];
 
     // 转换API数据格式
-    approvalTasks.value = (data.records || data.data || []).map(
-      (item: any) => ({
-        id: item.id,
-        contractId: item.contractId,
-        contractNumber: item.contractNo,
-        contractName: item.contractName,
-        contractType: item.contractType,
-        amount: item.amount,
-        status: item.approvalStatus?.toLowerCase() || "pending",
-        applicant: item.applicantName || "未知申请人",
-        applyTime: item.createdAt,
-        createdAt: item.createdAt,
-        description: item.description || "无描述",
-      }),
-    );
+    approvalTasks.value = records.map((item) => ({
+      id: String(item.id || ""),
+      contractId: String(item.contractId || ""),
+      contractNumber: item.contractNo || "",
+      contractName: item.contractName || "",
+      contractType: item.contractType || "",
+      amount: Number(item.amount || 0),
+      status: item.approvalStatus?.toLowerCase() || "pending",
+      applicant: item.applicantName || "未知申请人",
+      applyTime: item.createdAt || "",
+      createdAt: item.createdAt || "",
+      description: item.description || "无描述",
+    }));
   } catch (error) {
     console.error("加载审批任务失败:", error);
-    ElMessage.error("加载审批任务失败");
+    ElMessage.error(extractErrorMessage(error, "加载审批任务失败"));
     // 降级使用模拟数据
     let filteredTasks = mockApprovalTasks;
 

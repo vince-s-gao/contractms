@@ -2,7 +2,7 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 
 interface UserInfo {
-  id: string;
+  id?: string | number;
   username: string;
   role: string;
   department?: string;
@@ -17,31 +17,41 @@ export const useUserStore = defineStore("user", () => {
   // 设置用户信息
   const setUserInfo = (info: UserInfo) => {
     userInfo.value = info;
+    sessionStorage.setItem("userInfo", JSON.stringify(info));
   };
 
   // 设置token
   const setToken = (newToken: string) => {
     token.value = newToken;
-    localStorage.setItem("token", newToken);
+    sessionStorage.setItem("token", newToken);
   };
 
   // 获取token
   const getToken = (): string => {
-    return token.value || localStorage.getItem("token") || "";
+    return (
+      token.value ||
+      sessionStorage.getItem("token") ||
+      localStorage.getItem("token") ||
+      ""
+    );
   };
 
   // 清除用户信息
   const clearUserInfo = () => {
     userInfo.value = null;
     token.value = "";
+    sessionStorage.removeItem("token");
+    sessionStorage.removeItem("userInfo");
     localStorage.removeItem("token");
     localStorage.removeItem("userInfo");
   };
 
-  // 从localStorage加载用户信息
+  // 从浏览器存储加载用户信息
   const loadUserInfoFromStorage = () => {
-    const tokenStr = localStorage.getItem("token");
-    const userInfoStr = localStorage.getItem("userInfo");
+    const tokenStr =
+      sessionStorage.getItem("token") || localStorage.getItem("token");
+    const userInfoStr =
+      sessionStorage.getItem("userInfo") || localStorage.getItem("userInfo");
 
     if (tokenStr) {
       token.value = tokenStr;

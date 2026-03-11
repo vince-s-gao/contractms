@@ -256,7 +256,6 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onMounted } from "vue";
-import { useRouter } from "vue-router";
 import {
   ElMessageBox,
   ElMessage,
@@ -267,13 +266,18 @@ import {
   type UploadRawFile,
 } from "element-plus";
 import {
+  createContract,
   deleteContractAttachment,
   getContractAttachments,
+  updateContract,
   getContractTypes,
   uploadContractAttachments,
   type ContractAttachment,
+  type ContractUpsertPayload,
   type ContractTypeItem,
 } from "@/api/contract";
+import { useUserStore } from "@/stores/user";
+import { extractErrorMessage } from "@/utils/error";
 
 interface ContractFormData {
   contractNumber: string;
@@ -296,9 +300,27 @@ interface Participant {
   phone: string;
 }
 
+interface ContractFormSourceData {
+  id?: string | number;
+  contractNumber?: string;
+  contractNo?: string;
+  contractName?: string;
+  contractType?: string;
+  amount?: number;
+  taxRate?: number;
+  customerName?: string;
+  companySignatory?: string;
+  partyA?: string;
+  partyB?: string;
+  startDate?: string;
+  endDate?: string;
+  content?: string;
+  description?: string;
+}
+
 const props = defineProps<{
   modelValue: boolean;
-  contractData?: any;
+  contractData?: ContractFormSourceData;
 }>();
 
 const emit = defineEmits<{
@@ -306,7 +328,7 @@ const emit = defineEmits<{
   success: [];
 }>();
 
-const router = useRouter();
+const userStore = useUserStore();
 const visible = ref(false);
 const loading = ref(false);
 const formRef = ref<FormInstance>();
@@ -416,6 +438,7 @@ const loadContractData = () => {
 
   Object.assign(formData, {
     ...props.contractData,
+    contractNumber: props.contractData.contractNumber || props.contractData.contractNo || "",
     taxRate:
       props.contractData.taxRate === undefined ||
       props.contractData.taxRate === null
@@ -524,12 +547,12 @@ const handleDeleteExistingAttachment = async (attachmentId: number) => {
     await deleteContractAttachment(contractId, attachmentId);
     ElMessage.success("附件删除成功");
     await loadExistingAttachments();
-  } catch (error: any) {
+  } catch (error) {
     if (error === "cancel" || error === "close") {
       return;
     }
     console.error("删除附件失败:", error);
-    ElMessage.error(error?.response?.data?.message || "删除附件失败");
+    ElMessage.error(extractErrorMessage(error, "删除附件失败"));
   } finally {
     deletingAttachmentId.value = null;
   }
@@ -544,11 +567,7 @@ const handleSubmit = async () => {
   loading.value = true;
 
   try {
-    const token = localStorage.getItem("token");
-    const userInfo = JSON.parse(localStorage.getItem("userInfo") || "{}");
-
-    // 准备提交数据
-    const submitData = {
+    const submitData: ContractUpsertPayload = {
       contractNo: formData.contractNumber,
       contractName: formData.contractName,
       contractType: formData.contractType,
@@ -561,38 +580,20 @@ const handleSubmit = async () => {
       partyContact: formData.companySignatory || "",
       partyPhone:
         formData.participants.find((p) => p.role === "对方单位")?.phone || "",
-      createdBy: userInfo.id || 1,
+      createdBy: userStore.userInfo?.id || "Vince Gao",
     };
 
-    const url = isEdit.value
-      ? `/api/contracts/${props.contractData.id}`
-      : "/api/contracts";
-    const method = isEdit.value ? "PUT" : "POST";
-
-    const response = await fetch(url, {
-      method: method,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        "X-User-Id": userInfo.id || "1",
-      },
-      body: JSON.stringify(submitData),
-    });
-
-    if (response.status === 401) {
-      ElMessage.error("登录已过期，请重新登录");
-      localStorage.removeItem("token");
-      localStorage.removeItem("userInfo");
-      router.push("/login");
-      return;
+    let savedData: { id?: string | number; contractId?: string | number } = {};
+    if (isEdit.value && props.contractData?.id !== undefined) {
+      await updateContract(String(props.contractData.id), submitData);
+      savedData = { id: props.contractData.id };
+    } else {
+      const created = await createContract(submitData);
+      savedData = {
+        id: created?.id,
+        contractId: created?.contractId,
+      };
     }
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.message || "操作失败");
-    }
-
-    const savedData = await response.json().catch(() => ({}));
     const savedContractId = String(
       savedData?.id || savedData?.contractId || props.contractData?.id || "",
     );
@@ -606,7 +607,7 @@ const handleSubmit = async () => {
       });
       try {
         await uploadContractAttachments(savedContractId, attachmentFormData);
-      } catch (uploadError: any) {
+      } catch (uploadError) {
         console.error("附件上传失败:", uploadError);
         ElMessage.warning("合同已保存，但附件上传失败，请在详情页重试上传");
       }
@@ -617,9 +618,7 @@ const handleSubmit = async () => {
     handleClose();
   } catch (error) {
     console.error("合同操作失败:", error);
-    ElMessage.error(
-      error.message || (isEdit.value ? "合同更新失败" : "合同创建失败"),
-    );
+    ElMessage.error(extractErrorMessage(error, isEdit.value ? "合同更新失败" : "合同创建失败"));
   } finally {
     loading.value = false;
   }

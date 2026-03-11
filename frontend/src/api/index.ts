@@ -1,18 +1,26 @@
 import axios from "axios";
 import { ElMessage } from "element-plus";
 import { useUserStore } from "@/stores/user";
+import type { AxiosRequestConfig, RawAxiosRequestHeaders } from "axios";
 
 const SILENT_ERROR_HEADER = "X-Silent-Error-Message";
 
-const shouldShowGlobalError = (config: any) => {
-  const headers = config?.headers;
+const shouldShowGlobalError = (config?: AxiosRequestConfig) => {
+  const headers = config?.headers as
+    | RawAxiosRequestHeaders
+    | undefined
+    | {
+        get?: (name: string) => string | null | undefined;
+        [key: string]: unknown;
+      };
   if (!headers) {
     return true;
   }
   if (typeof headers.get === "function") {
     return String(headers.get(SILENT_ERROR_HEADER) || "").toLowerCase() !== "true";
   }
-  const direct = headers[SILENT_ERROR_HEADER] ?? headers[SILENT_ERROR_HEADER.toLowerCase()];
+  const direct =
+    headers[SILENT_ERROR_HEADER] ?? headers[SILENT_ERROR_HEADER.toLowerCase()];
   return String(direct || "").toLowerCase() !== "true";
 };
 
@@ -26,7 +34,7 @@ const request = axios.create({
 request.interceptors.request.use(
   (config) => {
     const userStore = useUserStore();
-    const token = userStore.getToken() || localStorage.getItem("token");
+    const token = userStore.getToken();
 
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;

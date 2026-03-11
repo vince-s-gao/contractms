@@ -167,7 +167,12 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
-import { useRouter } from "vue-router";
+import {
+  getContractOverview,
+  type ContractOverviewItem,
+  type TopCustomerRevenueItem,
+} from "@/api/contract";
+import { extractErrorMessage } from "@/utils/error";
 
 const metrics = reactive({
   totalContracts: 0,
@@ -177,10 +182,8 @@ const metrics = reactive({
   salesRevenue: 0,
   purchaseCost: 0,
 });
-const contractTypeStats = ref<Array<{ code: string; name: string; count: number }>>([]);
-const topCustomerRevenue = ref<
-  Array<{ rank: number; customerName: string; revenue: number; contractCount: number }>
->([]);
+const contractTypeStats = ref<ContractOverviewItem[]>([]);
+const topCustomerRevenue = ref<TopCustomerRevenueItem[]>([]);
 const top5CustomerRevenueShare = ref(0);
 const pieColors = ["#409EFF", "#67C23A", "#E6A23C", "#F56C6C", "#8E44AD", "#16A085", "#34495E", "#D35400"];
 const pieViewWidth = 560;
@@ -273,7 +276,6 @@ const pieSegments = computed(() => {
   return segments;
 });
 
-const router = useRouter();
 const currentYear = new Date().getFullYear();
 const selectedYear = ref<number | undefined>(currentYear);
 const yearOptions = computed(() => {
@@ -286,28 +288,9 @@ const yearOptions = computed(() => {
 
 const loadOverview = async () => {
   try {
-    const token = localStorage.getItem("token");
-    const query = selectedYear.value ? `?year=${selectedYear.value}` : "";
-    const response = await fetch(`/api/contracts/statistics/overview${query}`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
+    const data = await getContractOverview({
+      year: selectedYear.value,
     });
-
-    if (response.status === 401) {
-      ElMessage.error("登录已过期，请重新登录");
-      localStorage.removeItem("token");
-      localStorage.removeItem("userInfo");
-      router.push("/login");
-      return;
-    }
-    if (!response.ok) {
-      throw new Error("获取仪表板数据失败");
-    }
-
-    const data = await response.json();
     metrics.totalContracts = Number(data.totalContracts || 0);
     metrics.approvingContracts = Number(data.approvingContracts || 0);
     metrics.activeContracts = Number(data.activeContracts || 0);
@@ -315,14 +298,14 @@ const loadOverview = async () => {
     metrics.salesRevenue = Number(data.salesRevenue || 0);
     metrics.purchaseCost = Number(data.purchaseCost || 0);
     contractTypeStats.value = Array.isArray(data.contractTypeStats)
-      ? data.contractTypeStats.map((item: any) => ({
+      ? data.contractTypeStats.map((item: ContractOverviewItem) => ({
           code: String(item.code || ""),
           name: String(item.name || item.code || "-"),
           count: Number(item.count || 0),
         }))
       : [];
     topCustomerRevenue.value = Array.isArray(data.topCustomerRevenue)
-      ? data.topCustomerRevenue.map((item: any) => ({
+      ? data.topCustomerRevenue.map((item: TopCustomerRevenueItem) => ({
           rank: Number(item.rank || 0),
           customerName: String(item.customerName || "-"),
           revenue: Number(item.revenue || 0),
@@ -332,7 +315,7 @@ const loadOverview = async () => {
     top5CustomerRevenueShare.value = Number(data.top5CustomerRevenueShare || 0);
   } catch (error) {
     console.error("加载仪表板数据失败:", error);
-    ElMessage.error("加载仪表板数据失败");
+    ElMessage.error(extractErrorMessage(error, "加载仪表板数据失败"));
   }
 };
 

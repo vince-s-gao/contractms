@@ -127,13 +127,14 @@
 
 <script setup lang="ts">
 import { ref, watch } from "vue";
-import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import {
   downloadContractAttachment,
   getContractAttachments,
+  getContractById,
   type ContractAttachment,
 } from "@/api/contract";
+import { extractErrorMessage } from "@/utils/error";
 
 interface ContractDetail {
   id: string;
@@ -176,6 +177,34 @@ interface ApprovalRecord {
   createdAt: string;
 }
 
+interface ContractDetailResponse {
+  id?: string | number;
+  contractNumber?: string;
+  contractNo?: string;
+  signingYear?: number | string;
+  contractName?: string;
+  contractType?: string;
+  amount?: number;
+  taxRate?: number;
+  taxAmount?: number;
+  amountWithoutTax?: number;
+  status?: string;
+  startDate?: string;
+  endDate?: string;
+  createdBy?: string | number;
+  createdAt?: string;
+  content?: string;
+  description?: string;
+}
+
+interface AttachmentRecord {
+  id?: string | number;
+  name?: string;
+  size?: number;
+  fileType?: string;
+  uploadTime?: string;
+}
+
 const props = defineProps<{
   modelValue: boolean;
   contractId: string;
@@ -192,7 +221,6 @@ const contractDetail = ref<ContractDetail | null>(null);
 const participants = ref<Participant[]>([]);
 const attachments = ref<Attachment[]>([]);
 const approvalRecords = ref<ApprovalRecord[]>([]);
-const router = useRouter();
 
 // 监听props变化
 watch(
@@ -216,26 +244,7 @@ const loadContractDetail = async () => {
   loading.value = true;
 
   try {
-    const token = localStorage.getItem("token");
-    const response = await fetch(`/api/contracts/${props.contractId}`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-    });
-
-    if (response.status === 401) {
-      localStorage.removeItem("token");
-      localStorage.removeItem("userInfo");
-      router.push("/login");
-      return;
-    }
-    if (!response.ok) {
-      throw new Error("获取合同详情失败");
-    }
-
-    const data = await response.json();
+    const data = (await getContractById(props.contractId)) as ContractDetailResponse;
     contractDetail.value = {
       id: String(data.id ?? props.contractId),
       contractNumber: data.contractNumber || data.contractNo || "",
@@ -260,6 +269,7 @@ const loadContractDetail = async () => {
     await loadAttachments(contractDetail.value.id);
   } catch (error) {
     console.error("加载合同详情失败", error);
+    ElMessage.error(extractErrorMessage(error, "加载合同详情失败"));
     contractDetail.value = null;
   } finally {
     loading.value = false;
@@ -293,8 +303,8 @@ const loadAttachments = async (contractId: string) => {
     const response = await getContractAttachments(contractId);
     const records = response.records || response.data?.records || [];
     attachments.value = Array.isArray(records)
-      ? records.map((item: any) => ({
-          id: Number(item.id),
+      ? records.map((item: AttachmentRecord) => ({
+          id: Number(item.id || 0),
           name: String(item.name || ""),
           size: Number(item.size || 0),
           fileType: item.fileType || "",
@@ -326,7 +336,7 @@ const handleDownload = async (file: Attachment) => {
     window.URL.revokeObjectURL(url);
   } catch (error) {
     console.error("下载附件失败", error);
-    ElMessage.error("下载附件失败");
+    ElMessage.error(extractErrorMessage(error, "下载附件失败"));
   }
 };
 

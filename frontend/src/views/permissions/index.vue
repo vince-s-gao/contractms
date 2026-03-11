@@ -135,6 +135,8 @@ import {
   type RoleItem,
   type UserPermissionItem,
 } from "@/api/permission";
+import { useUserStore } from "@/stores/user";
+import { extractErrorMessage } from "@/utils/error";
 
 interface RoleForm {
   roleCode: string;
@@ -162,6 +164,7 @@ const roleForm = reactive<RoleForm>({
   description: "",
   permissionCodes: [],
 });
+const userStore = useUserStore();
 
 const loadUsers = async () => {
   userLoading.value = true;
@@ -204,9 +207,9 @@ const handleAssignRole = async (userId: number, roleId: number) => {
     await updateSystemUserRole(userId, roleId);
     ElMessage.success("角色分配成功");
     await loadUsers();
-  } catch (error: any) {
+  } catch (error) {
     console.error("分配角色失败:", error);
-    ElMessage.error(error?.response?.data?.message || "分配角色失败");
+    ElMessage.error(extractErrorMessage(error, "分配角色失败"));
     await loadUsers();
   }
 };
@@ -225,12 +228,12 @@ const handleDeleteUser = async (row: UserPermissionItem) => {
     await deleteSystemUser(row.id);
     ElMessage.success("用户删除成功");
     await loadUsers();
-  } catch (error: any) {
+  } catch (error) {
     if (error === "cancel" || error === "close") {
       return;
     }
     console.error("删除用户失败:", error);
-    ElMessage.error(error?.response?.data?.message || "删除用户失败");
+    ElMessage.error(extractErrorMessage(error, "删除用户失败"));
   }
 };
 
@@ -277,9 +280,9 @@ const handleSaveRole = async () => {
     roleDialogVisible.value = false;
     await loadRoles();
     await loadUsers();
-  } catch (error: any) {
+  } catch (error) {
     console.error("保存角色失败:", error);
-    ElMessage.error(error?.response?.data?.message || "保存角色失败");
+    ElMessage.error(extractErrorMessage(error, "保存角色失败"));
   } finally {
     saveRoleLoading.value = false;
   }
@@ -296,20 +299,20 @@ const handleDeleteRole = async (role: RoleItem) => {
     ElMessage.success("删除成功");
     await loadRoles();
     await loadUsers();
-  } catch (error: any) {
+  } catch (error) {
     if (error === "cancel" || error === "close") {
       return;
     }
     console.error("删除角色失败:", error);
-    ElMessage.error(error?.response?.data?.message || "删除角色失败");
+    ElMessage.error(extractErrorMessage(error, "删除角色失败"));
   }
 };
 
 onMounted(async () => {
-  const userInfo = JSON.parse(localStorage.getItem("userInfo") || "{}");
-  currentUsername.value = String(userInfo.username || "");
+  userStore.loadUserInfoFromStorage();
+  currentUsername.value = String(userStore.userInfo?.username || "");
   isAdminUser.value =
-    /admin/i.test(String(userInfo.role || "")) ||
+    /admin/i.test(String(userStore.userInfo?.role || "")) ||
     /admin/i.test(currentUsername.value);
   await Promise.all([loadPermissions(), loadRoles()]);
   await loadUsers();

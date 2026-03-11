@@ -103,7 +103,9 @@ import { ref, reactive } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import type { FormInstance, FormRules } from "element-plus";
-import { register as registerApi } from "@/api/user";
+import { login as loginApi, register as registerApi } from "@/api/user";
+import { useUserStore } from "@/stores/user";
+import { extractErrorMessage } from "@/utils/error";
 
 interface LoginForm {
   username: string;
@@ -117,6 +119,7 @@ interface RegisterForm {
 }
 
 const router = useRouter();
+const userStore = useUserStore();
 const loginFormRef = ref<FormInstance>();
 const registerFormRef = ref<FormInstance>();
 const loading = ref(false);
@@ -181,44 +184,26 @@ const handleLogin = async () => {
   loading.value = true;
 
   try {
-    // 调用真实API登录
-    const response = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        username: loginForm.username,
-        password: loginForm.password,
-      }),
+    const data = await loginApi({
+      username: loginForm.username,
+      password: loginForm.password,
     });
-
-    if (!response.ok) {
-      throw new Error("登录失败");
-    }
-
-    const data = await response.json();
     if (!data?.token) {
       throw new Error("登录响应缺少令牌");
     }
 
-    // 存储用户信息和token
-    localStorage.setItem("token", data.token);
-    localStorage.setItem(
-      "userInfo",
-      JSON.stringify(
-        data.user || {
-          username: loginForm.username,
-          role: "user",
-        },
-      ),
-    );
+    userStore.setToken(data.token);
+    const userInfo = data.user || {
+      username: loginForm.username,
+      role: "ROLE_USER",
+    };
+    userStore.setUserInfo(userInfo);
 
     ElMessage.success("登录成功");
     router.push("/dashboard");
   } catch (error) {
     console.error("登录错误:", error);
-    ElMessage.error("登录失败，请检查用户名和密码");
+    ElMessage.error(extractErrorMessage(error, "登录失败，请检查用户名和密码"));
   } finally {
     loading.value = false;
   }
@@ -242,9 +227,9 @@ const handleRegister = async () => {
     registerForm.username = "";
     registerForm.password = "";
     registerForm.confirmPassword = "";
-  } catch (error: any) {
+  } catch (error) {
     console.error("注册失败:", error);
-    ElMessage.error(error?.response?.data?.message || error?.message || "注册失败");
+    ElMessage.error(extractErrorMessage(error, "注册失败"));
   } finally {
     registerLoading.value = false;
   }

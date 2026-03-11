@@ -84,7 +84,8 @@ router.beforeEach((to, from, next) => {
   }
 
   // 检查登录状态
-  const token = localStorage.getItem("token");
+  const token =
+    sessionStorage.getItem("token") || localStorage.getItem("token");
   if (to.meta.requiresAuth && !token) {
     next("/login");
   } else {

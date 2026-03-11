@@ -68,6 +68,7 @@ import { computed, ref, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Setting } from "@element-plus/icons-vue";
+import { useUserStore } from "@/stores/user";
 
 interface UserInfo {
   username: string;
@@ -76,15 +77,16 @@ interface UserInfo {
 
 const router = useRouter();
 const route = useRoute();
+const userStore = useUserStore();
 const activeMenu = computed(() => route.path);
 const userInfo = ref<UserInfo>({ username: "", role: "" });
 
 onMounted(() => {
-  // 获取用户信息
-  const userInfoStr = localStorage.getItem("userInfo");
-  if (userInfoStr) {
-    userInfo.value = JSON.parse(userInfoStr);
-  }
+  userStore.loadUserInfoFromStorage();
+  userInfo.value = {
+    username: String(userStore.userInfo?.username || ""),
+    role: String(userStore.userInfo?.role || ""),
+  };
 });
 
 const handleCommand = async (command: string) => {
@@ -96,8 +98,7 @@ const handleCommand = async (command: string) => {
         type: "warning",
       });
 
-      localStorage.removeItem("token");
-      localStorage.removeItem("userInfo");
+      userStore.clearUserInfo();
       ElMessage.success("退出成功");
       router.push("/login");
     } catch {
