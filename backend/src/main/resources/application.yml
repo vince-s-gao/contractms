@@ -30,12 +30,17 @@ spring:
       resourceserver:
         jwt:
           issuer-uri: http://localhost:8080
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
 
 jwt:
   secret: ${JWT_SECRET:change-this-jwt-secret-key-at-least-32-bytes}
   expiration: ${JWT_EXPIRATION:86400000}
 
 app:
+  upload-dir: ${APP_UPLOAD_DIR:/app/logs/uploads}
   bootstrap:
     demo-data: ${APP_BOOTSTRAP_DEMO_DATA:false}
     admin-password: ${APP_BOOTSTRAP_ADMIN_PASSWORD:ChangeMe123!}

@@ -1,5 +1,9 @@
 import request from "./index";
 
+const silentErrorHeaders = {
+  "X-Silent-Error-Message": "true",
+};
+
 // 合同相关API接口
 export interface Contract {
   id?: string;
@@ -49,6 +53,14 @@ export interface ContractExportParams {
 export interface ContractTypeItem {
   code: string;
   name: string;
+}
+
+export interface ContractAttachment {
+  id: number;
+  name: string;
+  size: number;
+  fileType?: string;
+  uploadTime: string;
 }
 
 // 获取合同列表
@@ -196,6 +208,7 @@ export const createContractType = (data: { code: string; name: string }) => {
     url: "/contracts/types",
     method: "post",
     data,
+    headers: silentErrorHeaders,
   });
 };
 
@@ -207,12 +220,56 @@ export const updateContractType = (
     url: `/contracts/types/${encodeURIComponent(code)}`,
     method: "put",
     data,
+    headers: silentErrorHeaders,
   });
 };
 
 export const deleteContractType = (code: string) => {
   return request({
     url: `/contracts/types/${encodeURIComponent(code)}`,
+    method: "delete",
+    headers: silentErrorHeaders,
+  });
+};
+
+export const getContractAttachments = (contractId: string | number) => {
+  return request({
+    url: `/contracts/${contractId}/attachments`,
+    method: "get",
+  });
+};
+
+export const uploadContractAttachments = (
+  contractId: string | number,
+  formData: FormData,
+) => {
+  return request({
+    url: `/contracts/${contractId}/attachments`,
+    method: "post",
+    data: formData,
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
+  });
+};
+
+export const downloadContractAttachment = (
+  contractId: string | number,
+  attachmentId: string | number,
+) => {
+  return request({
+    url: `/contracts/${contractId}/attachments/${attachmentId}/download`,
+    method: "get",
+    responseType: "blob",
+  });
+};
+
+export const deleteContractAttachment = (
+  contractId: string | number,
+  attachmentId: string | number,
+) => {
+  return request({
+    url: `/contracts/${contractId}/attachments/${attachmentId}`,
     method: "delete",
   });
 };

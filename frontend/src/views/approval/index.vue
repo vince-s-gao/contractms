@@ -325,7 +325,10 @@ const handleApprovalSuccess = () => {
 };
 
 const formatAmount = (amount: number) => {
-  return amount.toLocaleString();
+  return Number(amount || 0).toLocaleString("zh-CN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 };
 
 const getStatusType = (status: string) => {

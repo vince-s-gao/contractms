@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS contracts (
     contract_name VARCHAR(200) NOT NULL,
     contract_type ENUM('SALES', 'PURCHASE', 'SERVICE', 'OTHER') NOT NULL,
     signing_year INT NULL,
+    tax_rate DECIMAL(5,2) NOT NULL DEFAULT 0.00,
     party_a VARCHAR(200) NOT NULL,
     party_b VARCHAR(200) NOT NULL,
     amount DECIMAL(15,2) NOT NULL,

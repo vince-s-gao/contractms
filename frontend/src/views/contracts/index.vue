@@ -19,22 +19,34 @@
           />
         </el-col>
         <el-col :span="3">
-          <el-input
-            v-model="searchParams.signingYear"
+          <el-select
+            v-model="searchParams.signingYears"
             placeholder="签约年份"
             clearable
-          />
+            multiple
+            collapse-tags
+            collapse-tags-tooltip
+          >
+            <el-option
+              v-for="year in signingYearOptions"
+              :key="year"
+              :label="String(year)"
+              :value="year"
+            />
+          </el-select>
         </el-col>
         <el-col :span="3">
           <el-select
-            v-model="searchParams.status"
-            placeholder="合同状态"
+            v-model="searchParams.contractType"
+            placeholder="合同类型"
             clearable
           >
-            <el-option label="草稿" value="draft" />
-            <el-option label="审批中" value="approving" />
-            <el-option label="已生效" value="active" />
-            <el-option label="已终止" value="terminated" />
+            <el-option
+              v-for="item in contractTypeOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
           </el-select>
         </el-col>
         <el-col :span="4">
@@ -77,38 +89,33 @@
         :data="contractList"
         stripe
         style="width: 100%"
+        @sort-change="handleSortChange"
       >
         <el-table-column type="selection" width="55" />
-        <el-table-column prop="contractNumber" label="合同编号" width="120" />
-        <el-table-column prop="signingYear" label="签约年份" width="100" />
-        <el-table-column prop="contractName" label="合同名称" min-width="200" />
-        <el-table-column prop="customerName" label="客户名称" min-width="160" />
+        <el-table-column prop="contractNumber" label="合同编号" width="120" sortable="custom" />
+        <el-table-column prop="signingYear" label="签约年份" width="100" sortable="custom" />
+        <el-table-column prop="contractName" label="合同名称" min-width="200" sortable="custom" />
+        <el-table-column prop="customerName" label="客户名称" min-width="160" sortable="custom" />
         <el-table-column
           prop="companySignatory"
           label="公司签约主体"
           min-width="160"
+          sortable="custom"
         />
-        <el-table-column prop="contractType" label="合同类型" width="100">
+        <el-table-column prop="contractType" label="合同类型" width="100" sortable="custom">
           <template #default="{ row }">
             <el-tag>{{ getContractTypeLabel(row.contractType) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="amount" label="合同金额" width="120">
+        <el-table-column prop="amount" label="合同金额" width="120" sortable="custom">
           <template #default="{ row }">
             ¥{{ formatAmount(row.amount) }}
           </template>
         </el-table-column>
-        <el-table-column prop="status" label="状态" width="100">
-          <template #default="{ row }">
-            <el-tag :type="getStatusType(row.status)">
-              {{ getStatusText(row.status) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="startDate" label="开始日期" width="120" />
-        <el-table-column prop="endDate" label="结束日期" width="120" />
-        <el-table-column prop="createdBy" label="创建人" width="100" />
-        <el-table-column prop="createdAt" label="创建时间" width="180" />
+        <el-table-column prop="startDate" label="开始日期" width="120" sortable="custom" />
+        <el-table-column prop="endDate" label="结束日期" width="120" sortable="custom" />
+        <el-table-column prop="createdBy" label="创建人" width="100" sortable="custom" />
+        <el-table-column prop="createdAt" label="创建时间" width="180" sortable="custom" />
         <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="handleView(row)"
@@ -285,8 +292,8 @@ interface Contract {
 interface SearchParams {
   keyword: string;
   customerName: string;
-  signingYear: string;
-  status: string;
+  contractType: string;
+  signingYears: number[];
   dateRange: string[];
 }
 
@@ -294,6 +301,11 @@ interface Pagination {
   current: number;
   size: number;
   total: number;
+}
+
+interface SortState {
+  prop: string;
+  order: "" | "ascending" | "descending";
 }
 
 interface ExportFieldOption {
@@ -312,14 +324,19 @@ const contractList = ref<Contract[]>([]);
 const searchParams = reactive<SearchParams>({
   keyword: "",
   customerName: "",
-  signingYear: "",
-  status: "",
+  contractType: "",
+  signingYears: [],
   dateRange: [],
 });
+const signingYearOptions = ref<number[]>([]);
 const pagination = reactive<Pagination>({
   current: 1,
   size: 10,
   total: 0,
+});
+const sortState = reactive<SortState>({
+  prop: "",
+  order: "",
 });
 
 // 对话框控制
@@ -372,40 +389,9 @@ const selectedExportFields = ref<string[]>(
   exportFieldOptions.map((item) => item.value),
 );
 
-// 模拟数据
-const mockContracts: Contract[] = [
-  {
-    id: "1",
-    contractNumber: "HT20230001",
-    contractName: "软件开发服务合同",
-    customerName: "深圳示例客户A",
-    companySignatory: "示例科技有限公司",
-    contractType: "技术服务",
-    amount: 500000,
-    status: "active",
-    startDate: "2023-01-01",
-    endDate: "2023-12-31",
-    createdBy: "张三",
-    createdAt: "2023-01-01 10:00:00",
-  },
-  {
-    id: "2",
-    contractNumber: "HT20230002",
-    contractName: "设备采购合同",
-    customerName: "上海示例客户B",
-    companySignatory: "示例科技有限公司",
-    contractType: "采购",
-    amount: 200000,
-    status: "draft",
-    startDate: "2023-02-01",
-    endDate: "2023-02-28",
-    createdBy: "李四",
-    createdAt: "2023-02-01 14:30:00",
-  },
-];
-
 onMounted(() => {
   loadContractTypeList();
+  loadSigningYearOptions();
   loadContractList();
 });
 
@@ -423,6 +409,29 @@ const loadContractTypeList = async () => {
   }
 };
 
+const loadSigningYearOptions = async () => {
+  try {
+    const token = localStorage.getItem("token");
+    const response = await fetch("/api/contracts/signing-years", {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+    if (!response.ok) {
+      throw new Error("加载签约年份失败");
+    }
+    const data = await response.json();
+    signingYearOptions.value = (data.records || data.data || [])
+      .map((item: any) => Number(item))
+      .filter((item: number) => Number.isInteger(item));
+  } catch (error) {
+    console.error("加载签约年份失败:", error);
+    signingYearOptions.value = [];
+  }
+};
+
 const loadContractList = async () => {
   loading.value = true;
 
@@ -437,15 +446,19 @@ const loadContractList = async () => {
     if (searchParams.customerName) {
       query.append("customerName", searchParams.customerName);
     }
-    if (searchParams.signingYear) {
-      query.append("signingYear", searchParams.signingYear.trim());
+    if (searchParams.contractType) {
+      query.append("contractType", searchParams.contractType);
     }
-    if (searchParams.status) {
-      query.append("status", searchParams.status);
+    if (searchParams.signingYears.length > 0) {
+      query.append("signingYears", searchParams.signingYears.join(","));
     }
     if (searchParams.dateRange?.length === 2) {
       query.append("startDate", searchParams.dateRange[0]);
       query.append("endDate", searchParams.dateRange[1]);
+    }
+    if (sortState.prop && sortState.order) {
+      query.append("sortBy", sortState.prop);
+      query.append("sortOrder", sortState.order === "ascending" ? "asc" : "desc");
     }
 
     // 调用真实API获取合同列表
@@ -458,7 +471,7 @@ const loadContractList = async () => {
       },
     });
 
-    if (response.status === 401) {
+    if (response.status === 401 || response.status === 403) {
       // 未授权，跳转到登录页
       ElMessage.error("登录已过期，请重新登录");
       localStorage.removeItem("token");
@@ -477,9 +490,6 @@ const loadContractList = async () => {
   } catch (error) {
     console.error("加载合同列表错误:", error);
     ElMessage.error("加载合同列表失败");
-    // 降级使用模拟数据
-    contractList.value = mockContracts;
-    pagination.total = mockContracts.length;
   } finally {
     loading.value = false;
   }
@@ -493,9 +503,24 @@ const handleSearch = () => {
 const handleReset = () => {
   searchParams.keyword = "";
   searchParams.customerName = "";
-  searchParams.signingYear = "";
-  searchParams.status = "";
+  searchParams.contractType = "";
+  searchParams.signingYears = [];
   searchParams.dateRange = [];
+  sortState.prop = "";
+  sortState.order = "";
+  pagination.current = 1;
+  loadContractList();
+};
+
+const handleSortChange = ({
+  prop,
+  order,
+}: {
+  prop: string;
+  order: "" | "ascending" | "descending";
+}) => {
+  sortState.prop = prop || "";
+  sortState.order = order || "";
   pagination.current = 1;
   loadContractList();
 };
@@ -547,9 +572,6 @@ const handleExportConfirm = async () => {
     };
     if (searchParams.keyword) {
       params.keyword = searchParams.keyword;
-    }
-    if (searchParams.status) {
-      params.status = searchParams.status;
     }
     if (searchParams.dateRange?.length === 2) {
       params.startDate = searchParams.dateRange[0];
@@ -610,7 +632,8 @@ const handleImportConfirm = async () => {
     importFileList.value = [];
     importRawFile.value = null;
     importOverwrite.value = false;
-    loadContractList();
+    pagination.current = 1;
+    await loadContractList();
   } catch (error: any) {
     console.error("批量导入失败:", error);
     ElMessage.error(error?.response?.data?.message || "批量导入失败，请检查文件格式");
@@ -781,28 +804,12 @@ const handleCurrentChange = (current: number) => {
 };
 
 const formatAmount = (amount: number) => {
-  return amount.toLocaleString();
+  return Number(amount || 0).toLocaleString("zh-CN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 };
 
-const getStatusType = (status: string) => {
-  const typeMap: Record<string, string> = {
-    draft: "info",
-    approving: "warning",
-    active: "success",
-    terminated: "danger",
-  };
-  return typeMap[status] || "info";
-};
-
-const getStatusText = (status: string) => {
-  const textMap: Record<string, string> = {
-    draft: "草稿",
-    approving: "审批中",
-    active: "已生效",
-    terminated: "已终止",
-  };
-  return textMap[status] || status;
-};
 </script>
 
 <style lang="scss" scoped>

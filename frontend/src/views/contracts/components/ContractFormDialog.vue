@@ -61,14 +61,43 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="合同金额" prop="amount">
+            <el-form-item label="合同金额(含税)" prop="amount">
               <el-input-number
                 v-model="formData.amount"
                 :min="0"
                 :precision="2"
                 style="width: 100%"
-                placeholder="请输入合同金额（选填）"
+                placeholder="请输入合同金额（含税，选填）"
               />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="税率(%)" prop="taxRate">
+              <el-input-number
+                v-model="formData.taxRate"
+                :min="0"
+                :max="100"
+                :precision="2"
+                :step="0.1"
+                style="width: 100%"
+                placeholder="请输入税率"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="税额">
+              <el-input :model-value="formattedTaxAmount" disabled />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="未税金额">
+              <el-input :model-value="formattedAmountWithoutTax" disabled />
             </el-form-item>
           </el-col>
         </el-row>
@@ -175,10 +204,30 @@
 
       <!-- 附件上传 -->
       <el-card header="附件" class="mt-20">
+        <div v-if="isEdit && existingAttachments.length > 0" class="existing-attachments">
+          <div class="attachments-title">已上传附件</div>
+          <div
+            v-for="file in existingAttachments"
+            :key="file.id"
+            class="attachment-row"
+          >
+            <span class="attachment-name">{{ file.name }}</span>
+            <span class="attachment-meta">{{ formatFileSize(file.size) }}</span>
+            <el-button
+              link
+              type="danger"
+              :loading="deletingAttachmentId === file.id"
+              @click="handleDeleteExistingAttachment(file.id)"
+            >
+              删除
+            </el-button>
+          </div>
+        </div>
         <el-upload
           class="upload-demo"
           action="#"
           :file-list="fileList"
+          multiple
           :auto-upload="false"
           :on-change="handleFileChange"
           :on-remove="handleFileRemove"
@@ -189,7 +238,7 @@
           </el-button>
           <template #tip>
             <div class="el-upload__tip">
-              支持上传PDF、Word、Excel文件，单个文件不超过10MB
+              支持上传PDF、Word、Excel文件，单个文件不超过100MB
             </div>
           </template>
         </el-upload>
@@ -209,18 +258,29 @@
 import { ref, reactive, computed, watch, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import {
+  ElMessageBox,
   ElMessage,
   type FormInstance,
   type FormRules,
   type UploadFile,
+  type UploadFiles,
+  type UploadRawFile,
 } from "element-plus";
-import { getContractTypes, type ContractTypeItem } from "@/api/contract";
+import {
+  deleteContractAttachment,
+  getContractAttachments,
+  getContractTypes,
+  uploadContractAttachments,
+  type ContractAttachment,
+  type ContractTypeItem,
+} from "@/api/contract";
 
 interface ContractFormData {
   contractNumber: string;
   contractName: string;
   contractType: string;
   amount: number | undefined;
+  taxRate: number | undefined;
   customerName: string;
   companySignatory: string;
   startDate: string;
@@ -251,6 +311,8 @@ const visible = ref(false);
 const loading = ref(false);
 const formRef = ref<FormInstance>();
 const fileList = ref<UploadFile[]>([]);
+const existingAttachments = ref<ContractAttachment[]>([]);
+const deletingAttachmentId = ref<number | null>(null);
 const contractTypeOptions = ref<ContractTypeItem[]>([
   { code: "SALES", name: "销售合同" },
   { code: "PURCHASE", name: "采购合同" },
@@ -264,12 +326,34 @@ const signingYearPreview = computed(() => {
   const matched = (formData.contractNumber || "").match(/20\d{2}/);
   return matched ? matched[0] : "";
 });
+const taxAmount = computed(() => {
+  const amountWithTax = Number(formData.amount || 0);
+  const rate = Number(formData.taxRate || 0);
+  if (!rate) {
+    return 0;
+  }
+  return (amountWithTax * rate) / (100 + rate);
+});
+const amountWithoutTax = computed(() => {
+  const amountWithTax = Number(formData.amount || 0);
+  return amountWithTax - taxAmount.value;
+});
+const formatCurrency = (value: number) =>
+  `¥${Number(value || 0).toLocaleString("zh-CN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+const formattedTaxAmount = computed(() => formatCurrency(taxAmount.value));
+const formattedAmountWithoutTax = computed(
+  () => formatCurrency(amountWithoutTax.value),
+);
 
 const formData = reactive<ContractFormData>({
   contractNumber: "",
   contractName: "",
   contractType: "",
   amount: undefined,
+  taxRate: 0,
   customerName: "",
   companySignatory: "",
   startDate: "",
@@ -332,6 +416,11 @@ const loadContractData = () => {
 
   Object.assign(formData, {
     ...props.contractData,
+    taxRate:
+      props.contractData.taxRate === undefined ||
+      props.contractData.taxRate === null
+        ? 0
+        : Number(props.contractData.taxRate),
     customerName:
       props.contractData.customerName || props.contractData.partyA || "",
     companySignatory:
@@ -346,6 +435,23 @@ const loadContractData = () => {
       name: formData.contractType,
     });
   }
+  loadExistingAttachments();
+};
+
+const loadExistingAttachments = async () => {
+  const contractId = props.contractData?.id;
+  if (!contractId) {
+    existingAttachments.value = [];
+    return;
+  }
+  try {
+    const response = await getContractAttachments(contractId);
+    const records = response.records || response.data?.records || [];
+    existingAttachments.value = Array.isArray(records) ? records : [];
+  } catch (error) {
+    console.error("加载附件失败:", error);
+    existingAttachments.value = [];
+  }
 };
 
 const resetForm = () => {
@@ -355,6 +461,7 @@ const resetForm = () => {
     contractName: "",
     contractType: "",
     amount: undefined,
+    taxRate: 0,
     customerName: "",
     companySignatory: "",
     startDate: "",
@@ -363,6 +470,8 @@ const resetForm = () => {
     participants: [],
   });
   fileList.value = [];
+  existingAttachments.value = [];
+  deletingAttachmentId.value = null;
 };
 
 const addParticipant = () => {
@@ -378,8 +487,8 @@ const removeParticipant = (index: number) => {
   formData.participants.splice(index, 1);
 };
 
-const handleFileChange = (file: UploadFile) => {
-  fileList.value.push(file);
+const handleFileChange = (_file: UploadFile, uploadFiles: UploadFiles) => {
+  fileList.value = [...uploadFiles];
 };
 
 const handleFileRemove = (file: UploadFile) => {
@@ -391,6 +500,39 @@ const handleFileRemove = (file: UploadFile) => {
 
 const handleClose = () => {
   visible.value = false;
+};
+
+const formatFileSize = (size: number) => {
+  const bytes = Number(size || 0);
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+};
+
+const handleDeleteExistingAttachment = async (attachmentId: number) => {
+  const contractId = props.contractData?.id;
+  if (!contractId) {
+    return;
+  }
+  try {
+    await ElMessageBox.confirm("确定删除该附件吗？", "提示", {
+      type: "warning",
+      confirmButtonText: "确定",
+      cancelButtonText: "取消",
+    });
+    deletingAttachmentId.value = attachmentId;
+    await deleteContractAttachment(contractId, attachmentId);
+    ElMessage.success("附件删除成功");
+    await loadExistingAttachments();
+  } catch (error: any) {
+    if (error === "cancel" || error === "close") {
+      return;
+    }
+    console.error("删除附件失败:", error);
+    ElMessage.error(error?.response?.data?.message || "删除附件失败");
+  } finally {
+    deletingAttachmentId.value = null;
+  }
 };
 
 const handleSubmit = async () => {
@@ -411,6 +553,7 @@ const handleSubmit = async () => {
       contractName: formData.contractName,
       contractType: formData.contractType,
       amount: formData.amount,
+      taxRate: formData.taxRate,
       startDate: formData.startDate,
       endDate: formData.endDate,
       description: formData.content,
@@ -447,6 +590,26 @@ const handleSubmit = async () => {
     if (!response.ok) {
       const errorData = await response.json();
       throw new Error(errorData.message || "操作失败");
+    }
+
+    const savedData = await response.json().catch(() => ({}));
+    const savedContractId = String(
+      savedData?.id || savedData?.contractId || props.contractData?.id || "",
+    );
+    const rawFiles = fileList.value
+      .map((item) => item.raw as UploadRawFile | undefined)
+      .filter((item): item is UploadRawFile => !!item);
+    if (savedContractId && rawFiles.length > 0) {
+      const attachmentFormData = new FormData();
+      rawFiles.forEach((rawFile) => {
+        attachmentFormData.append("files", rawFile);
+      });
+      try {
+        await uploadContractAttachments(savedContractId, attachmentFormData);
+      } catch (uploadError: any) {
+        console.error("附件上传失败:", uploadError);
+        ElMessage.warning("合同已保存，但附件上传失败，请在详情页重试上传");
+      }
     }
 
     ElMessage.success(isEdit.value ? "合同更新成功" : "合同创建成功");
@@ -487,6 +650,37 @@ const handleSubmit = async () => {
       &:last-child {
         margin-bottom: 0;
       }
+    }
+  }
+
+  .existing-attachments {
+    margin-bottom: 12px;
+
+    .attachments-title {
+      margin-bottom: 8px;
+      color: #606266;
+      font-size: 13px;
+    }
+
+    .attachment-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 6px 0;
+      border-bottom: 1px solid #f0f2f5;
+    }
+
+    .attachment-name {
+      flex: 1;
+      color: #303133;
+      word-break: break-all;
+    }
+
+    .attachment-meta {
+      color: #909399;
+      font-size: 12px;
+      min-width: 80px;
+      text-align: right;
     }
   }
 }

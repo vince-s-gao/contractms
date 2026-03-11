@@ -3,6 +3,9 @@ package com.contract.controller;
 import com.contract.service.ContractExportService;
 import com.contract.service.ContractImportService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -10,8 +13,12 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDate;
@@ -35,12 +42,19 @@ public class ContractController {
     @Autowired
     private ContractImportService contractImportService;
 
+    @Value("${app.upload-dir:/app/uploads}")
+    private String uploadDir;
+
     @GetMapping
     public ResponseEntity<?> getContracts(@RequestParam(defaultValue = "1", name = "page") int page,
                                           @RequestParam(defaultValue = "10", name = "size") int size,
                                           @RequestParam(required = false, name = "keyword") String keyword,
                                           @RequestParam(required = false, name = "customerName") String customerName,
+                                          @RequestParam(required = false, name = "contractType") String contractType,
                                           @RequestParam(required = false, name = "signingYear") Integer signingYear,
+                                          @RequestParam(required = false, name = "signingYears") String signingYears,
+                                          @RequestParam(required = false, name = "sortBy") String sortBy,
+                                          @RequestParam(required = false, name = "sortOrder") String sortOrder,
                                           @RequestParam(required = false, name = "status") String status,
                                           @RequestParam(required = false, name = "startDate") String startDate,
                                           @RequestParam(required = false, name = "endDate") String endDate) {
@@ -59,7 +73,22 @@ public class ContractController {
                        c.party_b AS companySignatory,
                        c.contract_type AS contractType,
                        c.amount AS amount,
-                       c.created_by AS createdBy,
+                       COALESCE(c.tax_rate, 0) AS taxRate,
+                       ROUND(
+                           CASE
+                               WHEN COALESCE(c.tax_rate, 0) = 0 THEN 0
+                               ELSE COALESCE(c.amount, 0) * COALESCE(c.tax_rate, 0) / (100 + COALESCE(c.tax_rate, 0))
+                           END,
+                           2
+                       ) AS taxAmount,
+                       ROUND(
+                           CASE
+                               WHEN COALESCE(c.tax_rate, 0) = 0 THEN COALESCE(c.amount, 0)
+                               ELSE COALESCE(c.amount, 0) / (1 + COALESCE(c.tax_rate, 0) / 100)
+                           END,
+                           2
+                       ) AS amountWithoutTax,
+                       'Vince Gao' AS createdBy,
                        DATE_FORMAT(c.created_time, '%Y-%m-%d %H:%i:%s') AS createdAt,
                        DATE_FORMAT(c.start_date, '%Y-%m-%d') AS startDate,
                        DATE_FORMAT(c.end_date, '%Y-%m-%d') AS endDate,
@@ -87,7 +116,17 @@ public class ContractController {
             listSql.append(" AND c.party_a LIKE ?");
             params.add("%" + customerName.trim() + "%");
         }
-        if (signingYear != null) {
+        if (!isBlank(contractType)) {
+            listSql.append(" AND c.contract_type = ?");
+            params.add(normalizeContractTypeCode(contractType));
+        }
+        List<Integer> signingYearList = parseSigningYears(signingYears);
+        if (!signingYearList.isEmpty()) {
+            listSql.append(" AND c.signing_year IN (");
+            appendPlaceholders(listSql, signingYearList.size());
+            listSql.append(")");
+            params.addAll(signingYearList);
+        } else if (signingYear != null) {
             listSql.append(" AND c.signing_year = ?");
             params.add(signingYear);
         }
@@ -103,7 +142,14 @@ public class ContractController {
             listSql.append(" AND c.end_date <= ?");
             params.add(endDate);
         }
-        listSql.append(" ORDER BY c.id DESC LIMIT ? OFFSET ?");
+        String orderByColumn = resolveContractSortColumn(sortBy);
+        String orderByDirection = resolveSortDirection(sortOrder);
+        if (orderByColumn == null) {
+            listSql.append(" ORDER BY COALESCE(c.updated_time, c.created_time) DESC, c.id DESC");
+        } else {
+            listSql.append(" ORDER BY ").append(orderByColumn).append(" ").append(orderByDirection).append(", c.id DESC");
+        }
+        listSql.append(" LIMIT ? OFFSET ?");
         params.add(safeSize);
         params.add(offset);
         List<Map<String, Object>> records = jdbcTemplate.queryForList(listSql.toString(), params.toArray());
@@ -121,7 +167,16 @@ public class ContractController {
             countSql.append(" AND c.party_a LIKE ?");
             countParams.add("%" + customerName.trim() + "%");
         }
-        if (signingYear != null) {
+        if (!isBlank(contractType)) {
+            countSql.append(" AND c.contract_type = ?");
+            countParams.add(normalizeContractTypeCode(contractType));
+        }
+        if (!signingYearList.isEmpty()) {
+            countSql.append(" AND c.signing_year IN (");
+            appendPlaceholders(countSql, signingYearList.size());
+            countSql.append(")");
+            countParams.addAll(signingYearList);
+        } else if (signingYear != null) {
             countSql.append(" AND c.signing_year = ?");
             countParams.add(signingYear);
         }
@@ -144,6 +199,17 @@ public class ContractController {
         result.put("page", safePage);
         result.put("size", safeSize);
         return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/signing-years")
+    public ResponseEntity<?> getSigningYears() {
+        List<Integer> records = jdbcTemplate.queryForList("""
+                SELECT DISTINCT signing_year
+                FROM contracts
+                WHERE signing_year IS NOT NULL
+                ORDER BY signing_year DESC
+                """, Integer.class);
+        return ResponseEntity.ok(Map.of("records", records, "total", records.size()));
     }
 
     @GetMapping("/export")
@@ -200,6 +266,10 @@ public class ContractController {
                 }
 
                 String contractType = toContractType(asString(values.get("contractType")));
+                BigDecimal taxRate = asBigDecimalOrNull(values.get("taxRate"));
+                if (taxRate == null) {
+                    taxRate = BigDecimal.ZERO;
+                }
                 Integer signingYear = extractSigningYearFromContractNo(contractNo);
                 BigDecimal amount = asBigDecimalOrNull(values.get("amount"));
                 LocalDate startDate = asDate(values.get("startDate"));
@@ -231,6 +301,7 @@ public class ContractController {
                                     SET contract_name = ?,
                                         contract_type = ?,
                                         signing_year = ?,
+                                        tax_rate = ?,
                                         amount = ?,
                                         start_date = ?,
                                         end_date = ?,
@@ -240,7 +311,8 @@ public class ContractController {
                                         updated_time = NOW()
                                     WHERE id = ?
                                     """,
-                            contractName, contractType, signingYear, amount, toSqlDate(startDate), toSqlDate(endDate),
+                            contractName, contractType, signingYear, taxRate, amount,
+                            toSqlDate(startDate), toSqlDate(endDate),
                             dbStatus, description, createdBy, existingId);
                     updated++;
                     continue;
@@ -248,12 +320,13 @@ public class ContractController {
 
                 jdbcTemplate.update("""
                                 INSERT INTO contracts (
-                                    contract_no, contract_name, contract_type, signing_year,
+                                    contract_no, contract_name, contract_type, signing_year, tax_rate,
                                     party_a, party_b, amount, start_date, end_date,
                                     status, description, created_by, updated_by
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                                 """,
-                        contractNo, contractName, contractType, signingYear, partyA, partyB, amount,
+                        contractNo, contractName, contractType, signingYear, taxRate,
+                        partyA, partyB, amount,
                         toSqlDate(startDate), toSqlDate(endDate), dbStatus, description, createdBy, createdBy);
                 success++;
             } catch (Exception e) {
@@ -273,6 +346,229 @@ public class ContractController {
         return ResponseEntity.ok(result);
     }
 
+    @GetMapping("/{id}/attachments")
+    public ResponseEntity<?> getAttachments(@PathVariable Long id) {
+        if (!existsContractId(id)) {
+            return ResponseEntity.notFound().build();
+        }
+        ensureContractAttachmentTable();
+        return ResponseEntity.ok(Map.of("records", queryAttachmentRecords(id)));
+    }
+
+    @PostMapping(value = "/{id}/attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> uploadAttachments(@PathVariable Long id,
+                                               @RequestPart("files") MultipartFile[] files,
+                                               @RequestParam(required = false) String description,
+                                               @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+        if (!existsContractId(id)) {
+            return ResponseEntity.notFound().build();
+        }
+        if (files == null || files.length == 0) {
+            return ResponseEntity.badRequest().body(Map.of("message", "请至少上传一个附件"));
+        }
+        ensureContractAttachmentTable();
+
+        Long uploadUserId = userId == null ? 1L : userId;
+        Path contractDir = Paths.get(uploadDir, "contracts", String.valueOf(id)).normalize();
+        try {
+            Files.createDirectories(contractDir);
+        } catch (IOException e) {
+            return ResponseEntity.internalServerError().body(Map.of("message", "创建附件目录失败"));
+        }
+
+        int uploaded = 0;
+        List<Map<String, Object>> errors = new ArrayList<>();
+        for (MultipartFile file : files) {
+            if (file == null || file.isEmpty()) {
+                continue;
+            }
+            String originName = safeFileName(file.getOriginalFilename());
+            if (isBlank(originName)) {
+                errors.add(Map.of("file", "unknown", "message", "文件名无效"));
+                continue;
+            }
+            String extension = "";
+            int dotIndex = originName.lastIndexOf('.');
+            if (dotIndex >= 0) {
+                extension = originName.substring(dotIndex);
+            }
+            String storedName = UUID.randomUUID().toString().replace("-", "") + extension;
+            Path targetFile = contractDir.resolve(storedName).normalize();
+            try {
+                file.transferTo(targetFile.toFile());
+                if (hasColumn("contract_attachments", "attachment_name")) {
+                    jdbcTemplate.update("""
+                                    INSERT INTO contract_attachments (
+                                        tenant_id, contract_id, attachment_name, file_path, file_size, file_type,
+                                        attachment_type, description, uploader_id, deleted_flag
+                                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                                    """,
+                            0L,
+                            id,
+                            originName,
+                            targetFile.toString(),
+                            file.getSize(),
+                            nullable(file.getContentType()),
+                            "CONTRACT",
+                            nullable(description),
+                            uploadUserId);
+                } else {
+                    jdbcTemplate.update("""
+                                    INSERT INTO contract_attachments (
+                                        contract_id, file_name, file_path, file_size, file_type, upload_user_id, description
+                                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                                    """,
+                            id,
+                            originName,
+                            targetFile.toString(),
+                            file.getSize(),
+                            nullable(file.getContentType()),
+                            uploadUserId,
+                            nullable(description));
+                }
+                uploaded++;
+            } catch (Exception e) {
+                errors.add(Map.of("file", originName, "message", defaultIfBlank(e.getMessage(), "上传失败")));
+            }
+        }
+
+        if (uploaded == 0) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "message", "附件上传失败",
+                    "uploaded", 0,
+                    "errors", errors
+            ));
+        }
+        Map<String, Object> response = new HashMap<>();
+        response.put("uploaded", uploaded);
+        response.put("errors", errors);
+        response.put("records", queryAttachmentRecords(id));
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/{id}/attachments/{attachmentId}/download")
+    public ResponseEntity<?> downloadAttachment(@PathVariable Long id, @PathVariable Long attachmentId) {
+        ensureContractAttachmentTable();
+        List<Map<String, Object>> rows;
+        if (hasColumn("contract_attachments", "attachment_name")) {
+            rows = jdbcTemplate.queryForList(
+                    """
+                            SELECT attachment_name AS fileName, file_path, file_type, file_size
+                            FROM contract_attachments
+                            WHERE id = ? AND contract_id = ? AND COALESCE(deleted_flag, 0) = 0
+                            LIMIT 1
+                            """,
+                    attachmentId, id);
+        } else {
+            rows = jdbcTemplate.queryForList(
+                    """
+                            SELECT file_name AS fileName, file_path, file_type, file_size
+                            FROM contract_attachments
+                            WHERE id = ? AND contract_id = ?
+                            LIMIT 1
+                            """,
+                    attachmentId, id);
+        }
+        if (rows.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        Map<String, Object> row = rows.get(0);
+        String filePath = asString(row.get("file_path"));
+        String fileName = asString(row.get("fileName"));
+        if (isBlank(filePath)) {
+            return ResponseEntity.notFound().build();
+        }
+        Path path = Paths.get(filePath).normalize();
+        Resource resource = new FileSystemResource(path.toFile());
+        if (!resource.exists()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        String contentType = asString(row.get("file_type"));
+        if (isBlank(contentType)) {
+            try {
+                contentType = Files.probeContentType(path);
+            } catch (IOException e) {
+                contentType = null;
+            }
+        }
+        if (isBlank(contentType)) {
+            contentType = MediaType.APPLICATION_OCTET_STREAM_VALUE;
+        }
+
+        String encodedFileName = URLEncoder.encode(defaultIfBlank(fileName, path.getFileName().toString()),
+                StandardCharsets.UTF_8).replace("+", "%20");
+        long contentLength;
+        try {
+            contentLength = resource.contentLength();
+        } catch (IOException e) {
+            contentLength = -1;
+        }
+        ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encodedFileName)
+                .header(HttpHeaders.CONTENT_TYPE, contentType);
+        if (contentLength >= 0) {
+            builder.header(HttpHeaders.CONTENT_LENGTH, String.valueOf(contentLength));
+        }
+        return builder.body(resource);
+    }
+
+    @DeleteMapping("/{id}/attachments/{attachmentId}")
+    public ResponseEntity<?> deleteAttachment(@PathVariable Long id, @PathVariable Long attachmentId) {
+        ensureContractAttachmentTable();
+        List<Map<String, Object>> rows;
+        boolean legacySchema = hasColumn("contract_attachments", "attachment_name");
+        if (legacySchema) {
+            rows = jdbcTemplate.queryForList(
+                    """
+                            SELECT file_path
+                            FROM contract_attachments
+                            WHERE id = ? AND contract_id = ? AND COALESCE(deleted_flag, 0) = 0
+                            LIMIT 1
+                            """,
+                    attachmentId, id);
+        } else {
+            rows = jdbcTemplate.queryForList(
+                    """
+                            SELECT file_path
+                            FROM contract_attachments
+                            WHERE id = ? AND contract_id = ?
+                            LIMIT 1
+                            """,
+                    attachmentId, id);
+        }
+        if (rows.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        String filePath = asString(rows.get(0).get("file_path"));
+        int affected;
+        if (legacySchema) {
+            affected = jdbcTemplate.update(
+                    """
+                            UPDATE contract_attachments
+                            SET deleted_flag = 1, updated_at = NOW()
+                            WHERE id = ? AND contract_id = ?
+                            """,
+                    attachmentId, id);
+        } else {
+            affected = jdbcTemplate.update(
+                    "DELETE FROM contract_attachments WHERE id = ? AND contract_id = ?",
+                    attachmentId, id);
+        }
+        if (affected == 0) {
+            return ResponseEntity.notFound().build();
+        }
+
+        if (!isBlank(filePath)) {
+            try {
+                Files.deleteIfExists(Paths.get(filePath).normalize());
+            } catch (Exception ignored) {
+            }
+        }
+        return ResponseEntity.ok(Map.of("message", "附件删除成功"));
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<?> getById(@PathVariable Long id) {
         String sql = """
@@ -286,7 +582,22 @@ public class ContractController {
                        c.party_b AS companySignatory,
                        c.contract_type AS contractType,
                        c.amount AS amount,
-                       c.created_by AS createdBy,
+                       COALESCE(c.tax_rate, 0) AS taxRate,
+                       ROUND(
+                           CASE
+                               WHEN COALESCE(c.tax_rate, 0) = 0 THEN 0
+                               ELSE COALESCE(c.amount, 0) * COALESCE(c.tax_rate, 0) / (100 + COALESCE(c.tax_rate, 0))
+                           END,
+                           2
+                       ) AS taxAmount,
+                       ROUND(
+                           CASE
+                               WHEN COALESCE(c.tax_rate, 0) = 0 THEN COALESCE(c.amount, 0)
+                               ELSE COALESCE(c.amount, 0) / (1 + COALESCE(c.tax_rate, 0) / 100)
+                           END,
+                           2
+                       ) AS amountWithoutTax,
+                       'Vince Gao' AS createdBy,
                        DATE_FORMAT(c.created_time, '%Y-%m-%d %H:%i:%s') AS createdAt,
                        DATE_FORMAT(c.start_date, '%Y-%m-%d') AS startDate,
                        DATE_FORMAT(c.end_date, '%Y-%m-%d') AS endDate,
@@ -338,6 +649,10 @@ public class ContractController {
 
         String contractType = toContractType(asString(request.get("contractType")));
         Integer signingYear = extractSigningYearFromContractNo(contractNo);
+        BigDecimal taxRate = asBigDecimalOrNull(request.get("taxRate"));
+        if (taxRate == null) {
+            taxRate = BigDecimal.ZERO;
+        }
         BigDecimal amount = asBigDecimal(request.get("amount"));
         LocalDate startDate = asDate(request.get("startDate"));
         LocalDate endDate = asDate(request.get("endDate"));
@@ -348,13 +663,13 @@ public class ContractController {
 
         String insertSql = """
                 INSERT INTO contracts (
-                    contract_no, contract_name, contract_type, signing_year,
+                    contract_no, contract_name, contract_type, signing_year, tax_rate,
                     party_a, party_b, amount, start_date, end_date,
                     status, description, created_by, updated_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?)
                 """;
         jdbcTemplate.update(insertSql,
-                contractNo, contractName, contractType, signingYear,
+                contractNo, contractName, contractType, signingYear, taxRate,
                 partyName, partyContact, amount, toSqlDate(startDate), toSqlDate(endDate),
                 description, createdBy, createdBy);
 
@@ -388,6 +703,7 @@ public class ContractController {
                     contract_name = COALESCE(?, contract_name),
                     contract_type = COALESCE(?, contract_type),
                     signing_year = ?,
+                    tax_rate = COALESCE(?, tax_rate),
                     amount = COALESCE(?, amount),
                     start_date = COALESCE(?, start_date),
                     end_date = COALESCE(?, end_date),
@@ -408,6 +724,7 @@ public class ContractController {
                 nullable(asString(request.get("contractName"))),
                 mappedType,
                 signingYear,
+                asBigDecimalOrNull(request.get("taxRate")),
                 asBigDecimalOrNull(request.get("amount")),
                 toSqlDate(asDate(request.get("startDate"))),
                 toSqlDate(asDate(request.get("endDate"))),
@@ -493,7 +810,7 @@ public class ContractController {
                        c.party_b AS companySignatory,
                        c.contract_type AS contractType,
                        c.amount AS amount,
-                       c.created_by AS createdBy,
+                       'Vince Gao' AS createdBy,
                        DATE_FORMAT(c.created_time, '%Y-%m-%d %H:%i:%s') AS createdAt,
                        DATE_FORMAT(c.created_time, '%Y-%m-%d %H:%i:%s') AS applyTime,
                        c.description AS description,
@@ -789,6 +1106,82 @@ public class ContractController {
         return "OTHER";
     }
 
+    private void ensureContractAttachmentTable() {
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS contract_attachments (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    tenant_id BIGINT DEFAULT 0,
+                    contract_id BIGINT NOT NULL,
+                    attachment_name VARCHAR(200) NOT NULL,
+                    file_path VARCHAR(500) NOT NULL,
+                    file_size BIGINT NOT NULL,
+                    file_type VARCHAR(100),
+                    attachment_type VARCHAR(50),
+                    description VARCHAR(500),
+                    uploader_id BIGINT NOT NULL DEFAULT 1,
+                    deleted_flag TINYINT DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX idx_contract_id (contract_id),
+                    INDEX idx_uploader_id (uploader_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """);
+    }
+
+    private List<Map<String, Object>> queryAttachmentRecords(Long contractId) {
+        if (hasColumn("contract_attachments", "attachment_name")) {
+            return jdbcTemplate.queryForList("""
+                    SELECT id,
+                           attachment_name AS name,
+                           file_size AS size,
+                           file_type AS fileType,
+                           DATE_FORMAT(created_at, '%Y-%m-%d %H:%i:%s') AS uploadTime
+                    FROM contract_attachments
+                    WHERE contract_id = ?
+                      AND COALESCE(deleted_flag, 0) = 0
+                    ORDER BY created_at DESC, id DESC
+                    """, contractId);
+        }
+        return jdbcTemplate.queryForList("""
+                SELECT id,
+                       file_name AS name,
+                       file_size AS size,
+                       file_type AS fileType,
+                       DATE_FORMAT(created_time, '%Y-%m-%d %H:%i:%s') AS uploadTime
+                FROM contract_attachments
+                WHERE contract_id = ?
+                ORDER BY created_time DESC, id DESC
+                """, contractId);
+    }
+
+    private boolean existsContractId(Long id) {
+        Long count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM contracts WHERE id = ?", Long.class, id);
+        return count != null && count > 0;
+    }
+
+    private static String safeFileName(String fileName) {
+        if (isBlank(fileName)) {
+            return null;
+        }
+        String normalized = fileName.replace("\\", "/");
+        int slash = normalized.lastIndexOf('/');
+        if (slash >= 0) {
+            normalized = normalized.substring(slash + 1);
+        }
+        return normalized.trim();
+    }
+
+    private boolean hasColumn(String tableName, String columnName) {
+        Long count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = ?
+                  AND COLUMN_NAME = ?
+                """, Long.class, tableName, columnName);
+        return count != null && count > 0;
+    }
+
     private void ensureContractTypeMetaTable() {
         jdbcTemplate.execute("""
                 CREATE TABLE IF NOT EXISTS contract_type_meta (
@@ -969,12 +1362,66 @@ public class ContractController {
         return value == null || value.isBlank();
     }
 
+    private static String resolveSortDirection(String sortOrder) {
+        if ("asc".equalsIgnoreCase(sortOrder)) {
+            return "ASC";
+        }
+        return "DESC";
+    }
+
+    private static String resolveContractSortColumn(String sortBy) {
+        if (isBlank(sortBy)) {
+            return null;
+        }
+        return switch (sortBy.trim()) {
+            case "contractNumber", "contractNo" -> "c.contract_no";
+            case "signingYear" -> "c.signing_year";
+            case "contractName" -> "c.contract_name";
+            case "customerName" -> "c.party_a";
+            case "companySignatory" -> "c.party_b";
+            case "contractType" -> "c.contract_type";
+            case "amount" -> "c.amount";
+            case "status" -> "c.status";
+            case "startDate" -> "c.start_date";
+            case "endDate" -> "c.end_date";
+            case "createdBy" -> "c.created_by";
+            case "createdAt" -> "c.created_time";
+            default -> null;
+        };
+    }
+
     private static String nullable(String value) {
         return isBlank(value) ? null : value;
     }
 
     private static String defaultIfBlank(String value, String defaultValue) {
         return isBlank(value) ? defaultValue : value;
+    }
+
+    private static void appendPlaceholders(StringBuilder sql, int size) {
+        for (int i = 0; i < size; i++) {
+            if (i > 0) {
+                sql.append(",");
+            }
+            sql.append("?");
+        }
+    }
+
+    private static List<Integer> parseSigningYears(String signingYears) {
+        if (isBlank(signingYears)) {
+            return Collections.emptyList();
+        }
+        List<Integer> result = new ArrayList<>();
+        for (String item : signingYears.split(",")) {
+            if (isBlank(item)) {
+                continue;
+            }
+            try {
+                result.add(Integer.parseInt(item.trim()));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return result;
     }
 
     private Long findContractIdByNo(String contractNo) {
@@ -1033,7 +1480,7 @@ public class ContractController {
                        c.contract_name AS contractName,
                        c.contract_type AS contractType,
                        c.amount AS amount,
-                       c.created_by AS createdBy,
+                       'Vince Gao' AS createdBy,
                        DATE_FORMAT(c.created_time, '%Y-%m-%d %H:%i:%s') AS createdAt,
                        DATE_FORMAT(c.start_date, '%Y-%m-%d') AS startDate,
                        DATE_FORMAT(c.end_date, '%Y-%m-%d') AS endDate,

@@ -149,7 +149,10 @@ onMounted(() => {
 });
 
 const formatCurrency = (value: number) => {
-  return `¥${(Number(value) || 0).toLocaleString()}`;
+  return `¥${(Number(value) || 0).toLocaleString("zh-CN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 };
 </script>
 

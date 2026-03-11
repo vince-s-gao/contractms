@@ -22,9 +22,22 @@
           <el-descriptions-item label="合同类型">{{
             contractDetail?.contractType
           }}</el-descriptions-item>
-          <el-descriptions-item label="合同金额"
+          <el-descriptions-item label="合同金额(含税)"
             >¥{{
               formatAmount(contractDetail?.amount || 0)
+            }}</el-descriptions-item
+          >
+          <el-descriptions-item label="税率(%)">{{
+            contractDetail?.taxRate ?? 0
+          }}</el-descriptions-item>
+          <el-descriptions-item label="税额"
+            >¥{{
+              formatAmount(contractDetail?.taxAmount || 0)
+            }}</el-descriptions-item
+          >
+          <el-descriptions-item label="未税金额"
+            >¥{{
+              formatAmount(contractDetail?.amountWithoutTax || 0)
             }}</el-descriptions-item
           >
           <el-descriptions-item label="开始日期">{{
@@ -77,7 +90,12 @@
           >
             <el-icon><Document /></el-icon>
             <span class="file-name">{{ file.name }}</span>
-            <el-button link type="primary" size="small">下载</el-button>
+            <span class="file-meta"
+              >{{ formatFileSize(file.size) }} | {{ file.uploadTime }}</span
+            >
+            <el-button link type="primary" size="small" @click="handleDownload(file)"
+              >下载</el-button
+            >
           </div>
         </div>
       </el-card>
@@ -110,6 +128,12 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import { ElMessage } from "element-plus";
+import {
+  downloadContractAttachment,
+  getContractAttachments,
+  type ContractAttachment,
+} from "@/api/contract";
 
 interface ContractDetail {
   id: string;
@@ -118,6 +142,9 @@ interface ContractDetail {
   contractName: string;
   contractType: string;
   amount: number;
+  taxRate?: number;
+  taxAmount?: number;
+  amountWithoutTax?: number;
   status: string;
   startDate: string;
   endDate: string;
@@ -134,10 +161,10 @@ interface Participant {
   phone: string;
 }
 
-interface Attachment {
-  id: string;
+interface Attachment extends ContractAttachment {
+  id: number;
   name: string;
-  size: string;
+  size: number;
   uploadTime: string;
 }
 
@@ -216,6 +243,9 @@ const loadContractDetail = async () => {
       contractName: data.contractName || "",
       contractType: data.contractType || "",
       amount: Number(data.amount || 0),
+      taxRate: Number(data.taxRate || 0),
+      taxAmount: Number(data.taxAmount || 0),
+      amountWithoutTax: Number(data.amountWithoutTax || 0),
       status: data.status || "draft",
       startDate: data.startDate || "",
       endDate: data.endDate || "",
@@ -224,10 +254,10 @@ const loadContractDetail = async () => {
       content: data.content || data.description || "",
     };
 
-    // 现有后端未提供详情参与人员/附件/审批记录，先清空避免展示假数据
+    // 现有后端未提供详情参与人员/审批记录，先清空避免展示假数据
     participants.value = [];
-    attachments.value = [];
     approvalRecords.value = [];
+    await loadAttachments(contractDetail.value.id);
   } catch (error) {
     console.error("加载合同详情失败", error);
     contractDetail.value = null;
@@ -245,7 +275,59 @@ const handleClose = () => {
 };
 
 const formatAmount = (amount: number) => {
-  return amount.toLocaleString();
+  return Number(amount || 0).toLocaleString("zh-CN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+};
+
+const formatFileSize = (size: number) => {
+  const bytes = Number(size || 0);
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+};
+
+const loadAttachments = async (contractId: string) => {
+  try {
+    const response = await getContractAttachments(contractId);
+    const records = response.records || response.data?.records || [];
+    attachments.value = Array.isArray(records)
+      ? records.map((item: any) => ({
+          id: Number(item.id),
+          name: String(item.name || ""),
+          size: Number(item.size || 0),
+          fileType: item.fileType || "",
+          uploadTime: String(item.uploadTime || ""),
+        }))
+      : [];
+  } catch (error) {
+    console.error("加载附件失败", error);
+    attachments.value = [];
+  }
+};
+
+const handleDownload = async (file: Attachment) => {
+  if (!contractDetail.value?.id) {
+    return;
+  }
+  try {
+    const response = await downloadContractAttachment(contractDetail.value.id, file.id);
+    const blob = new Blob([response.data], {
+      type: response.headers["content-type"] || "application/octet-stream",
+    });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = file.name || `attachment-${file.id}`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error("下载附件失败", error);
+    ElMessage.error("下载附件失败");
+  }
 };
 
 const getStatusType = (status: string) => {

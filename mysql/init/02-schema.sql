@@ -105,6 +105,7 @@ CREATE TABLE IF NOT EXISTS contracts (
     contract_name VARCHAR(200) NOT NULL COMMENT '合同名称',
     contract_type VARCHAR(50) NOT NULL COMMENT '合同类型：SALES-销售,PURCHASE-采购,SERVICE-服务,OTHER-其他',
     signing_year INT COMMENT '签约年份（从合同编号提取）',
+    tax_rate DECIMAL(5,2) NOT NULL DEFAULT 0.00 COMMENT '税率（百分比）',
     party_a VARCHAR(200) NOT NULL COMMENT '甲方单位',
     party_b VARCHAR(200) NOT NULL COMMENT '乙方单位',
     amount DECIMAL(15,2) NOT NULL COMMENT '合同金额',

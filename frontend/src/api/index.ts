@@ -2,6 +2,20 @@ import axios from "axios";
 import { ElMessage } from "element-plus";
 import { useUserStore } from "@/stores/user";
 
+const SILENT_ERROR_HEADER = "X-Silent-Error-Message";
+
+const shouldShowGlobalError = (config: any) => {
+  const headers = config?.headers;
+  if (!headers) {
+    return true;
+  }
+  if (typeof headers.get === "function") {
+    return String(headers.get(SILENT_ERROR_HEADER) || "").toLowerCase() !== "true";
+  }
+  const direct = headers[SILENT_ERROR_HEADER] ?? headers[SILENT_ERROR_HEADER.toLowerCase()];
+  return String(direct || "").toLowerCase() !== "true";
+};
+
 // 创建axios实例
 const request = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || "/api",
@@ -48,30 +62,43 @@ request.interceptors.response.use(
     ) {
       return data.data || data;
     } else {
-      ElMessage.error(data.message || "请求失败");
+      if (shouldShowGlobalError(response.config)) {
+        ElMessage.error(data.message || "请求失败");
+      }
       return Promise.reject(new Error(data.message || "请求失败"));
     }
   },
   (error) => {
     const { status, data } = error.response || {};
+    const showGlobalError = shouldShowGlobalError(error.config);
 
     switch (status) {
       case 401:
-        ElMessage.error("登录已过期，请重新登录");
+        if (showGlobalError) {
+          ElMessage.error("登录已过期，请重新登录");
+        }
         useUserStore().clearUserInfo();
         window.location.href = "/login";
         break;
       case 403:
-        ElMessage.error("没有权限访问该资源");
+        if (showGlobalError) {
+          ElMessage.error("没有权限访问该资源");
+        }
         break;
       case 404:
-        ElMessage.error("请求的资源不存在");
+        if (showGlobalError) {
+          ElMessage.error("请求的资源不存在");
+        }
         break;
       case 500:
-        ElMessage.error("服务器内部错误");
+        if (showGlobalError) {
+          ElMessage.error("服务器内部错误");
+        }
         break;
       default:
-        ElMessage.error(data?.message || "网络错误，请稍后重试");
+        if (showGlobalError) {
+          ElMessage.error(data?.message || "网络错误，请稍后重试");
+        }
     }
 
     return Promise.reject(error);
