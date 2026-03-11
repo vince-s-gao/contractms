@@ -948,6 +948,7 @@ public class ContractController {
         result.put("salesRevenue", asBigDecimal(row.get("salesRevenue")));
         result.put("purchaseCost", asBigDecimal(row.get("purchaseCost")));
         result.put("newThisMonth", asInt(row.get("newThisMonth")));
+        BigDecimal totalSalesRevenue = asBigDecimal(row.get("salesRevenue"));
 
         ensureContractTypeMetaTable();
         Map<String, String> typeNameMap = getContractTypeMetaNames();
@@ -977,6 +978,53 @@ public class ContractController {
             ));
         }
         result.put("contractTypeStats", contractTypeStats);
+
+        StringBuilder topCustomerSql = new StringBuilder("""
+                SELECT COALESCE(NULLIF(TRIM(party_a), ''), '未命名客户') AS customerName,
+                       SUM(COALESCE(amount, 0)) AS revenue,
+                       COUNT(*) AS contractCount
+                FROM contracts
+                WHERE contract_type = 'SALES'
+                """);
+        List<Object> topCustomerParams = new ArrayList<>();
+        if (year != null) {
+            topCustomerSql.append(" AND signing_year = ?");
+            topCustomerParams.add(year);
+        }
+        topCustomerSql.append("""
+                
+                GROUP BY COALESCE(NULLIF(TRIM(party_a), ''), '未命名客户')
+                ORDER BY revenue DESC, customerName ASC
+                LIMIT 20
+                """);
+        List<Map<String, Object>> topCustomerRows = jdbcTemplate.queryForList(topCustomerSql.toString(), topCustomerParams.toArray());
+
+        List<Map<String, Object>> topCustomerRevenue = new ArrayList<>();
+        BigDecimal top5Revenue = BigDecimal.ZERO;
+        for (int i = 0; i < topCustomerRows.size(); i++) {
+            Map<String, Object> item = topCustomerRows.get(i);
+            String customerName = asString(item.get("customerName"));
+            BigDecimal revenue = asBigDecimal(item.get("revenue"));
+            int contractCount = asInt(item.get("contractCount"));
+            if (i < 5) {
+                top5Revenue = top5Revenue.add(revenue);
+            }
+            topCustomerRevenue.add(Map.of(
+                    "rank", i + 1,
+                    "customerName", defaultIfBlank(customerName, "未命名客户"),
+                    "revenue", revenue,
+                    "contractCount", contractCount
+            ));
+        }
+        BigDecimal top5Share = BigDecimal.ZERO;
+        if (totalSalesRevenue.compareTo(BigDecimal.ZERO) > 0) {
+            top5Share = top5Revenue
+                    .multiply(BigDecimal.valueOf(100))
+                    .divide(totalSalesRevenue, 2, java.math.RoundingMode.HALF_UP);
+        }
+        result.put("topCustomerRevenue", topCustomerRevenue);
+        result.put("top5CustomerRevenueShare", top5Share);
+        result.put("top5CustomerRevenue", top5Revenue);
         return ResponseEntity.ok(result);
     }
 

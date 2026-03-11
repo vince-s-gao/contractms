@@ -136,6 +136,25 @@
 
     <el-card shadow="never" class="mt-16">
       <template #header>
+        <div class="customer-header">
+          <span>客户收入贡献（销售合同）</span>
+          <span class="customer-top5">Top5客户收入占比：{{ formatPercent(top5CustomerRevenueShare) }}</span>
+        </div>
+      </template>
+      <el-table :data="topCustomerRevenue" stripe size="small" max-height="420">
+        <el-table-column prop="rank" label="排名" width="70" />
+        <el-table-column prop="customerName" label="客户名称" min-width="220" />
+        <el-table-column prop="contractCount" label="合同数" width="90" />
+        <el-table-column label="收入贡献" width="180">
+          <template #default="{ row }">
+            {{ formatCurrency(row.revenue) }}
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
+    <el-card shadow="never" class="mt-16">
+      <template #header>
         <span>系统概览</span>
       </template>
       <p class="hint">
@@ -159,9 +178,13 @@ const metrics = reactive({
   purchaseCost: 0,
 });
 const contractTypeStats = ref<Array<{ code: string; name: string; count: number }>>([]);
+const topCustomerRevenue = ref<
+  Array<{ rank: number; customerName: string; revenue: number; contractCount: number }>
+>([]);
+const top5CustomerRevenueShare = ref(0);
 const pieColors = ["#409EFF", "#67C23A", "#E6A23C", "#F56C6C", "#8E44AD", "#16A085", "#34495E", "#D35400"];
 const pieViewWidth = 560;
-const pieViewHeight = 280;
+const pieViewHeight = 300;
 const pieCenterX = 280;
 const pieCenterY = 140;
 const pieRadius = 52;
@@ -172,7 +195,7 @@ const pieTotal = computed(() =>
 );
 const pieSegments = computed(() => {
   let offset = 0;
-  return contractTypeStats.value.map((item, index) => {
+  const segments = contractTypeStats.value.map((item, index) => {
     const count = Number(item.count || 0);
     const ratio = pieTotal.value > 0 ? count / pieTotal.value : 0;
     const length = ratio * pieCircumference;
@@ -193,24 +216,61 @@ const pieSegments = computed(() => {
       textX: 0,
       textY: 0,
       textAnchor: "start" as "start" | "end",
+      preferredY: 0,
+      isRight: true,
     };
     const midRatio = pieCircumference === 0 ? 0 : (segment.offset + segment.length / 2) / pieCircumference;
     const angle = -Math.PI / 2 + Math.PI * 2 * midRatio;
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
+    segment.isRight = cos >= 0;
     segment.lineStartX = pieCenterX + cos * (pieRadius + pieStrokeWidth / 2);
     segment.lineStartY = pieCenterY + sin * (pieRadius + pieStrokeWidth / 2);
     segment.lineMidX = pieCenterX + cos * (pieRadius + pieStrokeWidth / 2 + 18);
     segment.lineMidY = pieCenterY + sin * (pieRadius + pieStrokeWidth / 2 + 18);
-    const horizontal = cos >= 0 ? 18 : -18;
+    segment.preferredY = segment.lineMidY;
+    const horizontal = cos >= 0 ? 28 : -28;
     segment.lineEndX = segment.lineMidX + horizontal;
-    segment.lineEndY = segment.lineMidY;
+    segment.lineEndY = segment.preferredY;
     segment.textX = segment.lineEndX + (cos >= 0 ? 4 : -4);
-    segment.textY = segment.lineEndY + 4;
+    segment.textY = segment.preferredY + 4;
     segment.textAnchor = cos >= 0 ? "start" : "end";
     offset += length;
     return segment;
   });
+
+  const minGap = 18;
+  const topLimit = 22;
+  const bottomLimit = pieViewHeight - 20;
+  const layoutSide = (isRight: boolean) => {
+    const side = segments
+      .filter((item) => item.isRight === isRight)
+      .sort((a, b) => a.preferredY - b.preferredY);
+    if (!side.length) {
+      return;
+    }
+    let cursor = topLimit;
+    for (const item of side) {
+      item.lineEndY = Math.max(item.preferredY, cursor);
+      cursor = item.lineEndY + minGap;
+    }
+    const overflow = cursor - minGap - bottomLimit;
+    if (overflow > 0) {
+      let backCursor = bottomLimit;
+      for (let i = side.length - 1; i >= 0; i--) {
+        const item = side[i];
+        item.lineEndY = Math.min(item.lineEndY - overflow, backCursor);
+        backCursor = item.lineEndY - minGap;
+      }
+    }
+    for (const item of side) {
+      item.lineMidY = item.lineEndY;
+      item.textY = item.lineEndY + 4;
+    }
+  };
+  layoutSide(true);
+  layoutSide(false);
+  return segments;
 });
 
 const router = useRouter();
@@ -261,6 +321,15 @@ const loadOverview = async () => {
           count: Number(item.count || 0),
         }))
       : [];
+    topCustomerRevenue.value = Array.isArray(data.topCustomerRevenue)
+      ? data.topCustomerRevenue.map((item: any) => ({
+          rank: Number(item.rank || 0),
+          customerName: String(item.customerName || "-"),
+          revenue: Number(item.revenue || 0),
+          contractCount: Number(item.contractCount || 0),
+        }))
+      : [];
+    top5CustomerRevenueShare.value = Number(data.top5CustomerRevenueShare || 0);
   } catch (error) {
     console.error("加载仪表板数据失败:", error);
     ElMessage.error("加载仪表板数据失败");
@@ -276,6 +345,10 @@ const formatCurrency = (value: number) => {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
+};
+
+const formatPercent = (value: number) => {
+  return `${(Number(value) || 0).toFixed(2)}%`;
 };
 </script>
 
@@ -325,6 +398,19 @@ const formatCurrency = (value: number) => {
   .hint {
     color: #606266;
     line-height: 1.8;
+  }
+
+  .customer-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .customer-top5 {
+    color: #409eff;
+    font-weight: 600;
   }
 
   .type-pie-wrap {
