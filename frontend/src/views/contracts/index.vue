@@ -1,89 +1,74 @@
 <template>
   <div class="contracts-container">
-    <!-- 搜索和操作区域 -->
     <div class="search-area">
-      <el-row :gutter="20">
-        <el-col :span="6">
-          <el-input
-            v-model="searchParams.keyword"
-            placeholder="搜索合同名称、编号"
-            prefix-icon="Search"
-            clearable
+      <div class="search-fields">
+        <el-input
+          v-model="searchParams.keyword"
+          placeholder="搜索合同名称、编号"
+          prefix-icon="Search"
+          clearable
+        />
+        <el-input
+          v-model="searchParams.customerName"
+          placeholder="客户名称（模糊搜索）"
+          clearable
+        />
+        <el-select
+          v-model="searchParams.signingYears"
+          placeholder="签约年份"
+          clearable
+          multiple
+          collapse-tags
+          collapse-tags-tooltip
+        >
+          <el-option
+            v-for="year in signingYearOptions"
+            :key="year"
+            :label="String(year)"
+            :value="year"
           />
-        </el-col>
-        <el-col :span="4">
-          <el-input
-            v-model="searchParams.customerName"
-            placeholder="客户名称（模糊搜索）"
-            clearable
+        </el-select>
+        <el-select
+          v-model="searchParams.contractType"
+          placeholder="合同类型"
+          clearable
+        >
+          <el-option
+            v-for="item in contractTypeOptions"
+            :key="item.value"
+            :label="item.label"
+            :value="item.value"
           />
-        </el-col>
-        <el-col :span="3">
-          <el-select
-            v-model="searchParams.signingYears"
-            placeholder="签约年份"
-            clearable
-            multiple
-            collapse-tags
-            collapse-tags-tooltip
-          >
-            <el-option
-              v-for="year in signingYearOptions"
-              :key="year"
-              :label="String(year)"
-              :value="year"
-            />
-          </el-select>
-        </el-col>
-        <el-col :span="3">
-          <el-select
-            v-model="searchParams.contractType"
-            placeholder="合同类型"
-            clearable
-          >
-            <el-option
-              v-for="item in contractTypeOptions"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </el-select>
-        </el-col>
-        <el-col :span="4">
-          <el-date-picker
-            v-model="searchParams.dateRange"
-            type="daterange"
-            range-separator="至"
-            start-placeholder="开始日期"
-            end-placeholder="结束日期"
-            value-format="YYYY-MM-DD"
-          />
-        </el-col>
-        <el-col :span="10">
-          <el-button type="primary" @click="handleSearch">
-            <el-icon><Search /></el-icon>
-            搜索
-          </el-button>
-          <el-button @click="handleReset">重置</el-button>
-          <el-button type="warning" plain @click="handleOpenImport">
-            批量上传
-          </el-button>
-          <el-button type="primary" plain @click="handleOpenExport">
-            导出合同
-          </el-button>
-          <el-button type="success" @click="handleCreate">
-            <el-icon><Plus /></el-icon>
-            新建合同
-          </el-button>
-          <el-button type="info" plain @click="handleOpenTypeManage">
-            合同类型管理
-          </el-button>
-        </el-col>
-      </el-row>
+        </el-select>
+      </div>
+      <div class="search-actions">
+        <el-button type="primary" @click="handleSearch">
+          <el-icon><Search /></el-icon>
+          搜索
+        </el-button>
+        <el-button @click="handleReset">重置</el-button>
+        <el-button type="warning" plain @click="handleOpenImport">
+          批量上传
+        </el-button>
+        <el-button type="primary" plain @click="handleOpenExport">
+          导出合同
+        </el-button>
+        <el-button type="success" @click="handleCreate">
+          <el-icon><Plus /></el-icon>
+          新建合同
+        </el-button>
+        <el-button type="info" plain @click="handleOpenTypeManage">
+          合同类型管理
+        </el-button>
+      </div>
     </div>
 
     <!-- 合同列表 -->
     <div class="table-area">
+      <div class="table-head">
+        <div class="table-title">合同列表</div>
+        <div class="table-meta">共 {{ pagination.total }} 条</div>
+      </div>
       <el-table
         v-loading="loading"
         :data="contractList"
@@ -92,17 +77,35 @@
         @sort-change="handleSortChange"
       >
         <el-table-column type="selection" width="55" />
-        <el-table-column prop="contractNumber" label="合同编号" width="120" sortable="custom" />
-        <el-table-column prop="signingYear" label="签约年份" width="100" sortable="custom" />
+        <el-table-column
+          prop="contractNumber"
+          label="合同编号"
+          width="180"
+          sortable="custom"
+          class-name="contract-no-col"
+        />
+        <el-table-column
+          prop="signingYear"
+          label="签约年份"
+          width="120"
+          sortable="custom"
+          header-cell-class-name="sort-inline"
+        />
         <el-table-column prop="contractName" label="合同名称" min-width="200" sortable="custom" />
         <el-table-column prop="customerName" label="客户名称" min-width="160" sortable="custom" />
         <el-table-column
           prop="companySignatory"
           label="公司签约主体"
-          min-width="160"
+          min-width="130"
           sortable="custom"
         />
-        <el-table-column prop="contractType" label="合同类型" width="100" sortable="custom">
+        <el-table-column
+          prop="contractType"
+          label="合同类型"
+          width="120"
+          sortable="custom"
+          header-cell-class-name="sort-inline"
+        >
           <template #default="{ row }">
             <el-tag>{{ getContractTypeLabel(row.contractType) }}</el-tag>
           </template>
@@ -114,7 +117,6 @@
         </el-table-column>
         <el-table-column prop="startDate" label="开始日期" width="120" sortable="custom" />
         <el-table-column prop="endDate" label="结束日期" width="120" sortable="custom" />
-        <el-table-column prop="createdBy" label="创建人" width="100" sortable="custom" />
         <el-table-column prop="createdAt" label="创建时间" width="180" sortable="custom" />
         <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
@@ -294,7 +296,6 @@ interface SearchParams {
   customerName: string;
   contractType: string;
   signingYears: number[];
-  dateRange: string[];
 }
 
 interface Pagination {
@@ -326,7 +327,6 @@ const searchParams = reactive<SearchParams>({
   customerName: "",
   contractType: "",
   signingYears: [],
-  dateRange: [],
 });
 const signingYearOptions = ref<number[]>([]);
 const pagination = reactive<Pagination>({
@@ -382,7 +382,6 @@ const exportFieldOptions: ExportFieldOption[] = [
   { label: "状态", value: "status" },
   { label: "开始日期", value: "startDate" },
   { label: "结束日期", value: "endDate" },
-  { label: "创建人", value: "createdBy" },
   { label: "创建时间", value: "createdAt" },
 ];
 const selectedExportFields = ref<string[]>(
@@ -452,10 +451,6 @@ const loadContractList = async () => {
     if (searchParams.signingYears.length > 0) {
       query.append("signingYears", searchParams.signingYears.join(","));
     }
-    if (searchParams.dateRange?.length === 2) {
-      query.append("startDate", searchParams.dateRange[0]);
-      query.append("endDate", searchParams.dateRange[1]);
-    }
     if (sortState.prop && sortState.order) {
       query.append("sortBy", sortState.prop);
       query.append("sortOrder", sortState.order === "ascending" ? "asc" : "desc");
@@ -505,7 +500,6 @@ const handleReset = () => {
   searchParams.customerName = "";
   searchParams.contractType = "";
   searchParams.signingYears = [];
-  searchParams.dateRange = [];
   sortState.prop = "";
   sortState.order = "";
   pagination.current = 1;
@@ -573,11 +567,6 @@ const handleExportConfirm = async () => {
     if (searchParams.keyword) {
       params.keyword = searchParams.keyword;
     }
-    if (searchParams.dateRange?.length === 2) {
-      params.startDate = searchParams.dateRange[0];
-      params.endDate = searchParams.dateRange[1];
-    }
-
     const response = await exportContracts(params);
     const blob = new Blob([response.data], {
       type:
@@ -814,23 +803,82 @@ const formatAmount = (amount: number) => {
 
 <style lang="scss" scoped>
 .contracts-container {
-  padding: 20px;
-  background: white;
-  border-radius: 4px;
+  padding: 16px;
+  background: #fff;
+  border-radius: 8px;
   min-height: calc(100vh - 140px);
 }
 
 .search-area {
-  margin-bottom: 20px;
+  margin-bottom: 14px;
+  background: #f8fafc;
+  border: 1px solid #e9edf3;
+  border-radius: 8px;
+  padding: 12px;
 
-  .el-col {
+  .search-fields {
+    display: grid;
+    grid-template-columns: 2fr 1.4fr 1fr 1fr;
+    gap: 10px;
     margin-bottom: 10px;
+  }
+
+  .search-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
   }
 }
 
 .table-area {
+  border: 1px solid #e9edf3;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+  padding: 10px 12px 12px;
+
+  .table-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+
+  .table-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #303133;
+  }
+
+  .table-meta {
+    font-size: 12px;
+    color: #909399;
+  }
+
+  :deep(.el-table th.el-table__cell) {
+    background: #f5f7fa;
+    color: #4a5568;
+    font-weight: 600;
+  }
+
+  :deep(.el-table th.sort-inline .cell) {
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  :deep(.el-table .cell) {
+    line-height: 1.4;
+  }
+
+  :deep(.el-table .contract-no-col .cell) {
+    white-space: nowrap;
+    word-break: keep-all;
+  }
+
   .pagination-area {
-    margin-top: 20px;
+    margin-top: 14px;
     text-align: right;
   }
 }
@@ -850,5 +898,38 @@ const formatAmount = (amount: number) => {
   grid-template-columns: 1.1fr 1.2fr auto auto;
   gap: 10px;
   margin-bottom: 16px;
+}
+
+@media (max-width: 1400px) {
+  .search-area {
+    .search-fields {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+}
+
+@media (max-width: 900px) {
+  .contracts-container {
+    padding: 10px;
+    border-radius: 6px;
+  }
+
+  .search-area {
+    padding: 10px;
+
+    .search-fields {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .table-area {
+    padding: 8px;
+
+    .pagination-area {
+      :deep(.el-pagination) {
+        justify-content: center;
+      }
+    }
+  }
 }
 </style>
