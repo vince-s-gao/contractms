@@ -117,7 +117,6 @@
         </el-table-column>
         <el-table-column prop="startDate" label="开始日期" width="120" sortable="custom" />
         <el-table-column prop="endDate" label="结束日期" width="120" sortable="custom" />
-        <el-table-column prop="createdAt" label="创建时间" width="180" sortable="custom" />
         <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="handleView(row)"
@@ -382,7 +381,6 @@ const exportFieldOptions: ExportFieldOption[] = [
   { label: "状态", value: "status" },
   { label: "开始日期", value: "startDate" },
   { label: "结束日期", value: "endDate" },
-  { label: "创建时间", value: "createdAt" },
 ];
 const selectedExportFields = ref<string[]>(
   exportFieldOptions.map((item) => item.value),
