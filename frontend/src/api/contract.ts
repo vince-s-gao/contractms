@@ -295,6 +295,7 @@ export const createContractType = (data: { code: string; name: string }) => {
     method: "post",
     data,
     headers: silentErrorHeaders,
+    timeout: 30000,
   });
 };
 
@@ -307,6 +308,7 @@ export const updateContractType = (
     method: "put",
     data,
     headers: silentErrorHeaders,
+    timeout: 30000,
   });
 };
 
@@ -315,6 +317,7 @@ export const deleteContractType = (code: string) => {
     url: `/contracts/types/${encodeURIComponent(code)}`,
     method: "delete",
     headers: silentErrorHeaders,
+    timeout: 30000,
   });
 };
 

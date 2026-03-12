@@ -677,6 +677,17 @@ const handleSaveType = async () => {
     resetTypeForm();
   } catch (error) {
     console.error("保存合同类型失败:", error);
+    if (!editingTypeCode.value) {
+      const refreshed = await loadContractTypeList();
+      if (refreshed) {
+        const created = contractTypeList.value.find((item) => item.code === code);
+        if (created) {
+          resetTypeForm();
+          ElMessage.success("合同类型新增成功");
+          return;
+        }
+      }
+    }
     const message = extractErrorMessage(error, "保存合同类型失败");
     if (String(message).includes("已存在")) {
       await loadContractTypeList();

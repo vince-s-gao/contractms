@@ -1,6 +1,7 @@
 package com.contract.controller;
 
 import com.contract.entity.User;
+import com.contract.service.OperationLogService;
 import com.contract.service.UserService;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -40,6 +41,9 @@ public class AuthController {
     
     @Autowired
     private PasswordEncoder passwordEncoder;
+
+    @Autowired
+    private OperationLogService operationLogService;
     
     @PostMapping("/login")
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequest loginRequest) {
@@ -75,9 +79,11 @@ public class AuthController {
             ));
             response.put("expiresIn", jwtExpiration);
             response.put("message", "登录成功");
+            operationLogService.log(authentication, "LOGIN", "AUTH", "用户登录成功：" + loginRequest.getUsername(), "SUCCESS", null);
             
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            operationLogService.log(null, "LOGIN", "AUTH", "用户登录失败：" + loginRequest.getUsername(), "FAILED", e.getMessage());
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("message", "用户名或密码错误");
             return ResponseEntity.badRequest().body(errorResponse);
@@ -97,9 +103,11 @@ public class AuthController {
             response.put("message", "注册成功");
             response.put("userId", createdUser.getId());
             response.put("username", createdUser.getUsername());
+            operationLogService.log(null, "REGISTER", "AUTH", "用户注册成功：" + createdUser.getUsername(), "SUCCESS", null);
             
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            operationLogService.log(null, "REGISTER", "AUTH", "用户注册失败：" + registerRequest.getUsername(), "FAILED", e.getMessage());
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("message", e.getMessage());
             return ResponseEntity.badRequest().body(errorResponse);

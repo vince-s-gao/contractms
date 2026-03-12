@@ -2,6 +2,7 @@ package com.contract.controller;
 
 import com.contract.service.ContractExportService;
 import com.contract.service.ContractImportService;
+import com.contract.service.OperationLogService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
@@ -47,6 +48,9 @@ public class ContractController {
 
     @Autowired
     private ContractImportService contractImportService;
+
+    @Autowired
+    private OperationLogService operationLogService;
 
     @Value("${app.upload-dir:/app/uploads}")
     private String uploadDir;
@@ -223,10 +227,13 @@ public class ContractController {
                                                   @RequestParam(required = false) String keyword,
                                                   @RequestParam(required = false) String status,
                                                   @RequestParam(required = false) String startDate,
-                                                  @RequestParam(required = false) String endDate) {
+                                                  @RequestParam(required = false) String endDate,
+                                                  Authentication authentication) {
         List<String> selectedFields = parseExportFields(fields);
         List<Map<String, Object>> records = queryContractsForExport(keyword, status, startDate, endDate);
         byte[] fileContent = contractExportService.exportToExcel(records, selectedFields);
+        operationLogService.log(authentication, "EXPORT", "CONTRACT",
+                "导出合同成功，导出条数=" + records.size(), "SUCCESS", null);
 
         String fileName = "合同导出.xlsx";
         String encodedFileName = URLEncoder.encode(fileName, StandardCharsets.UTF_8).replace("+", "%20");
@@ -241,14 +248,19 @@ public class ContractController {
     @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
     public ResponseEntity<?> importContracts(@RequestPart("file") MultipartFile file,
-                                             @RequestParam(defaultValue = "false") boolean overwrite) {
+                                             @RequestParam(defaultValue = "false") boolean overwrite,
+                                             Authentication authentication) {
         final List<ContractImportService.ImportRow> rows;
         try {
             rows = contractImportService.parseContractRows(file);
         } catch (IllegalArgumentException e) {
+            operationLogService.log(authentication, "IMPORT", "CONTRACT",
+                    "批量导入合同失败：文件解析失败", "FAILED", e.getMessage());
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
         if (rows.isEmpty()) {
+            operationLogService.log(authentication, "IMPORT", "CONTRACT",
+                    "批量导入合同失败：无有效数据", "FAILED", "Excel中没有可导入的数据");
             return ResponseEntity.badRequest().body(Map.of("message", "Excel中没有可导入的数据"));
         }
 
@@ -350,6 +362,10 @@ public class ContractController {
         result.put("failed", failed);
         result.put("overwrite", overwrite);
         result.put("errors", errors.size() > 20 ? errors.subList(0, 20) : errors);
+        operationLogService.log(authentication, "IMPORT", "CONTRACT",
+                "批量导入完成：total=" + total + ", success=" + success + ", updated=" + updated + ", failed=" + failed,
+                failed > 0 ? "FAILED" : "SUCCESS",
+                failed > 0 ? "部分记录导入失败" : null);
         return ResponseEntity.ok(result);
     }
 
@@ -369,9 +385,13 @@ public class ContractController {
                                                @RequestParam(required = false) String description,
                                                Authentication authentication) {
         if (!existsContractId(id)) {
+            operationLogService.log(authentication, "UPLOAD_ATTACHMENT", "CONTRACT",
+                    "上传附件失败：合同不存在 id=" + id, "FAILED", "合同不存在");
             return ResponseEntity.notFound().build();
         }
         if (files == null || files.length == 0) {
+            operationLogService.log(authentication, "UPLOAD_ATTACHMENT", "CONTRACT",
+                    "上传附件失败：未选择文件，contractId=" + id, "FAILED", "请至少上传一个附件");
             return ResponseEntity.badRequest().body(Map.of("message", "请至少上传一个附件"));
         }
         ensureContractAttachmentTable();
@@ -381,6 +401,8 @@ public class ContractController {
         try {
             Files.createDirectories(contractDir);
         } catch (IOException e) {
+            operationLogService.log(authentication, "UPLOAD_ATTACHMENT", "CONTRACT",
+                    "上传附件失败：创建目录失败，contractId=" + id, "FAILED", e.getMessage());
             return ResponseEntity.internalServerError().body(Map.of("message", "创建附件目录失败"));
         }
 
@@ -449,6 +471,8 @@ public class ContractController {
         }
 
         if (uploaded == 0) {
+            operationLogService.log(authentication, "UPLOAD_ATTACHMENT", "CONTRACT",
+                    "上传附件失败：全部文件失败，contractId=" + id, "FAILED", "附件上传失败");
             return ResponseEntity.badRequest().body(Map.of(
                     "message", "附件上传失败",
                     "uploaded", 0,
@@ -459,6 +483,8 @@ public class ContractController {
         response.put("uploaded", uploaded);
         response.put("errors", errors);
         response.put("records", queryAttachmentRecords(id));
+        operationLogService.log(authentication, "UPLOAD_ATTACHMENT", "CONTRACT",
+                "上传附件成功：contractId=" + id + "，uploaded=" + uploaded, "SUCCESS", null);
         return ResponseEntity.ok(response);
     }
 
@@ -531,7 +557,7 @@ public class ContractController {
 
     @DeleteMapping("/{id}/attachments/{attachmentId}")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
-    public ResponseEntity<?> deleteAttachment(@PathVariable Long id, @PathVariable Long attachmentId) {
+    public ResponseEntity<?> deleteAttachment(@PathVariable Long id, @PathVariable Long attachmentId, Authentication authentication) {
         ensureContractAttachmentTable();
         List<Map<String, Object>> rows;
         boolean legacySchema = hasColumn("contract_attachments", "attachment_name");
@@ -555,6 +581,8 @@ public class ContractController {
                     attachmentId, id);
         }
         if (rows.isEmpty()) {
+            operationLogService.log(authentication, "DELETE_ATTACHMENT", "CONTRACT",
+                    "删除附件失败：附件不存在 contractId=" + id + ", attachmentId=" + attachmentId, "FAILED", "附件不存在");
             return ResponseEntity.notFound().build();
         }
 
@@ -574,6 +602,8 @@ public class ContractController {
                     attachmentId, id);
         }
         if (affected == 0) {
+            operationLogService.log(authentication, "DELETE_ATTACHMENT", "CONTRACT",
+                    "删除附件失败：附件不存在 contractId=" + id + ", attachmentId=" + attachmentId, "FAILED", "附件不存在");
             return ResponseEntity.notFound().build();
         }
 
@@ -583,6 +613,8 @@ public class ContractController {
             } catch (Exception ignored) {
             }
         }
+        operationLogService.log(authentication, "DELETE_ATTACHMENT", "CONTRACT",
+                "删除附件成功 contractId=" + id + ", attachmentId=" + attachmentId, "SUCCESS", null);
         return ResponseEntity.ok(Map.of("message", "附件删除成功"));
     }
 
@@ -655,13 +687,17 @@ public class ContractController {
 
     @PostMapping
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
-    public ResponseEntity<?> create(@RequestBody Map<String, Object> request) {
+    public ResponseEntity<?> create(@RequestBody Map<String, Object> request, Authentication authentication) {
         String contractNo = asString(request.get("contractNo"));
         String contractName = asString(request.get("contractName"));
         if (isBlank(contractNo) || isBlank(contractName)) {
+            operationLogService.log(authentication, "CREATE", "CONTRACT",
+                    "创建合同失败：合同编号或名称为空", "FAILED", "合同编号和合同名称不能为空");
             return ResponseEntity.badRequest().body(Map.of("message", "合同编号和合同名称不能为空"));
         }
         if (existsContractNo(contractNo, null)) {
+            operationLogService.log(authentication, "CREATE", "CONTRACT",
+                    "创建合同失败：合同编号已存在 " + contractNo, "FAILED", "合同编号已存在");
             return ResponseEntity.badRequest().body(Map.of("message", "合同编号已存在"));
         }
 
@@ -694,23 +730,31 @@ public class ContractController {
         Long createdId = jdbcTemplate.queryForObject(
                 "SELECT id FROM contracts WHERE contract_no = ? LIMIT 1", Long.class, contractNo);
         if (createdId == null) {
+            operationLogService.log(authentication, "CREATE", "CONTRACT",
+                    "创建合同失败：创建后未找到合同ID contractNo=" + contractNo, "FAILED", "创建合同失败");
             return ResponseEntity.badRequest().body(Map.of("message", "创建合同失败"));
         }
+        operationLogService.log(authentication, "CREATE", "CONTRACT",
+                "创建合同成功 contractNo=" + contractNo + ", id=" + createdId, "SUCCESS", null);
         return getById(createdId);
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
-    public ResponseEntity<?> update(@PathVariable Long id, @RequestBody Map<String, Object> request) {
+    public ResponseEntity<?> update(@PathVariable Long id, @RequestBody Map<String, Object> request, Authentication authentication) {
         List<Map<String, Object>> existed = jdbcTemplate.queryForList(
                 "SELECT id, contract_no FROM contracts WHERE id = ?", id);
         if (existed.isEmpty()) {
+            operationLogService.log(authentication, "UPDATE", "CONTRACT",
+                    "更新合同失败：合同不存在 id=" + id, "FAILED", "合同不存在");
             return ResponseEntity.notFound().build();
         }
 
         String currentNo = asString(existed.get(0).get("contract_no"));
         String contractNo = asString(request.get("contractNo"));
         if (!isBlank(contractNo) && !contractNo.equals(currentNo) && existsContractNo(contractNo, id)) {
+            operationLogService.log(authentication, "UPDATE", "CONTRACT",
+                    "更新合同失败：合同编号已存在 " + contractNo, "FAILED", "合同编号已存在");
             return ResponseEntity.badRequest().body(Map.of("message", "合同编号已存在"));
         }
         String finalContractNo = isBlank(contractNo) ? currentNo : contractNo;
@@ -752,28 +796,37 @@ public class ContractController {
                 nullable(asString(request.get("partyContact"))),
                 asLong(request.get("updatedBy"), null),
                 id);
-
+        operationLogService.log(authentication, "UPDATE", "CONTRACT",
+                "更新合同成功 id=" + id + ", contractNo=" + finalContractNo, "SUCCESS", null);
         return getById(id);
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:delete')")
-    public ResponseEntity<?> delete(@PathVariable Long id) {
+    public ResponseEntity<?> delete(@PathVariable Long id, Authentication authentication) {
         int affected = jdbcTemplate.update("DELETE FROM contracts WHERE id = ?", id);
         if (affected == 0) {
+            operationLogService.log(authentication, "DELETE", "CONTRACT",
+                    "删除合同失败：合同不存在 id=" + id, "FAILED", "合同不存在");
             return ResponseEntity.notFound().build();
         }
+        operationLogService.log(authentication, "DELETE", "CONTRACT",
+                "删除合同成功 id=" + id, "SUCCESS", null);
         return ResponseEntity.ok(Map.of("message", "删除成功"));
     }
 
     @PostMapping("/{id}/submit")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:approval')")
-    public ResponseEntity<?> submit(@PathVariable Long id) {
+    public ResponseEntity<?> submit(@PathVariable Long id, Authentication authentication) {
         int affected = jdbcTemplate.update(
                 "UPDATE contracts SET status = 'PENDING', updated_time = NOW() WHERE id = ?", id);
         if (affected == 0) {
+            operationLogService.log(authentication, "SUBMIT_APPROVAL", "CONTRACT",
+                    "提交审批失败：合同不存在 id=" + id, "FAILED", "合同不存在");
             return ResponseEntity.notFound().build();
         }
+        operationLogService.log(authentication, "SUBMIT_APPROVAL", "CONTRACT",
+                "提交审批成功 id=" + id, "SUCCESS", null);
         return ResponseEntity.ok(Map.of("message", "提交审批成功"));
     }
 
@@ -781,12 +834,15 @@ public class ContractController {
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_APPROVAL_MANAGER') or hasAuthority('contract:approval')")
     public ResponseEntity<?> approve(@PathVariable Long id,
                                      @RequestParam boolean approved,
-                                     @RequestParam(required = false) String comment) {
+                                     @RequestParam(required = false) String comment,
+                                     Authentication authentication) {
         String nextStatus = approved ? "APPROVED" : "TERMINATED";
         int affected = jdbcTemplate.update(
                 "UPDATE contracts SET status = ?, updated_time = NOW() WHERE id = ?",
                 nextStatus, id);
         if (affected == 0) {
+            operationLogService.log(authentication, approved ? "APPROVE" : "REJECT", "CONTRACT",
+                    "审批失败：合同不存在 id=" + id, "FAILED", "合同不存在");
             return ResponseEntity.notFound().build();
         }
         if (!isBlank(comment)) {
@@ -794,19 +850,25 @@ public class ContractController {
                     "UPDATE contracts SET description = CONCAT(COALESCE(description, ''), '\\n审批备注: ', ?) WHERE id = ?",
                     comment, id);
         }
+        operationLogService.log(authentication, approved ? "APPROVE" : "REJECT", "CONTRACT",
+                (approved ? "审批通过" : "审批拒绝") + " id=" + id, "SUCCESS", null);
         return ResponseEntity.ok(Map.of("message", approved ? "审批通过" : "审批拒绝"));
     }
 
     @PutMapping("/{id}/status")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_APPROVAL_MANAGER') or hasAuthority('contract:approval')")
-    public ResponseEntity<?> updateStatus(@PathVariable Long id, @RequestParam String status) {
+    public ResponseEntity<?> updateStatus(@PathVariable Long id, @RequestParam String status, Authentication authentication) {
         String mapped = toContractDbStatus(status);
         int affected = jdbcTemplate.update(
                 "UPDATE contracts SET status = ?, updated_time = NOW() WHERE id = ?",
                 mapped, id);
         if (affected == 0) {
+            operationLogService.log(authentication, "UPDATE_STATUS", "CONTRACT",
+                    "更新状态失败：合同不存在 id=" + id, "FAILED", "合同不存在");
             return ResponseEntity.notFound().build();
         }
+        operationLogService.log(authentication, "UPDATE_STATUS", "CONTRACT",
+                "更新状态成功 id=" + id + ", status=" + mapped, "SUCCESS", null);
         return ResponseEntity.ok(Map.of("message", "状态更新成功"));
     }
 
@@ -1049,16 +1111,20 @@ public class ContractController {
 
     @PostMapping("/types")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
-    public ResponseEntity<?> createContractType(@RequestBody Map<String, Object> request) {
+    public ResponseEntity<?> createContractType(@RequestBody Map<String, Object> request, Authentication authentication) {
         ensureContractTypeMetaTable();
         String code = normalizeContractTypeCode(asString(request.get("code")));
         String name = normalizeContractTypeName(asString(request.get("name")), code);
         if (!isValidContractTypeCode(code)) {
+            operationLogService.log(authentication, "CREATE_TYPE", "CONTRACT",
+                    "新增合同类型失败：编码不合法 " + code, "FAILED", "类型编码格式不正确");
             return ResponseEntity.badRequest().body(Map.of("message", "类型编码仅支持2-50位大写字母、数字、下划线"));
         }
 
         List<String> enumCodes = getContractTypeEnumCodes();
         if (enumCodes.contains(code)) {
+            operationLogService.log(authentication, "CREATE_TYPE", "CONTRACT",
+                    "新增合同类型失败：编码已存在 " + code, "FAILED", "合同类型编码已存在");
             return ResponseEntity.badRequest().body(Map.of("message", "合同类型编码已存在"));
         }
 
@@ -1066,13 +1132,16 @@ public class ContractController {
         updatedCodes.add(code);
         updateContractTypeEnum(updatedCodes);
         upsertContractTypeMeta(code, name);
+        operationLogService.log(authentication, "CREATE_TYPE", "CONTRACT",
+                "新增合同类型成功 code=" + code + ", name=" + name, "SUCCESS", null);
         return ResponseEntity.ok(Map.of("code", code, "name", name));
     }
 
     @PutMapping("/types/{code}")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
     public ResponseEntity<?> updateContractType(@PathVariable String code,
-                                                @RequestBody Map<String, Object> request) {
+                                                @RequestBody Map<String, Object> request,
+                                                Authentication authentication) {
         ensureContractTypeMetaTable();
         String oldCode = normalizeContractTypeCode(code);
         String newCode = normalizeContractTypeCode(asString(request.get("code")));
@@ -1082,15 +1151,21 @@ public class ContractController {
         String newName = normalizeContractTypeName(asString(request.get("name")), newCode);
 
         if (!isValidContractTypeCode(oldCode) || !isValidContractTypeCode(newCode)) {
+            operationLogService.log(authentication, "UPDATE_TYPE", "CONTRACT",
+                    "更新合同类型失败：编码不合法 old=" + oldCode + ", new=" + newCode, "FAILED", "类型编码格式不正确");
             return ResponseEntity.badRequest().body(Map.of("message", "类型编码仅支持2-50位大写字母、数字、下划线"));
         }
 
         List<String> enumCodes = getContractTypeEnumCodes();
         if (!enumCodes.contains(oldCode)) {
+            operationLogService.log(authentication, "UPDATE_TYPE", "CONTRACT",
+                    "更新合同类型失败：类型不存在 code=" + oldCode, "FAILED", "合同类型不存在");
             return ResponseEntity.badRequest().body(Map.of("message", "合同类型不存在"));
         }
 
         if (!oldCode.equals(newCode) && enumCodes.contains(newCode)) {
+            operationLogService.log(authentication, "UPDATE_TYPE", "CONTRACT",
+                    "更新合同类型失败：新编码已存在 newCode=" + newCode, "FAILED", "新的合同类型编码已存在");
             return ResponseEntity.badRequest().body(Map.of("message", "新的合同类型编码已存在"));
         }
 
@@ -1105,26 +1180,34 @@ public class ContractController {
         }
 
         upsertContractTypeMeta(newCode, newName);
+        operationLogService.log(authentication, "UPDATE_TYPE", "CONTRACT",
+                "更新合同类型成功 oldCode=" + oldCode + ", newCode=" + newCode, "SUCCESS", null);
         return ResponseEntity.ok(Map.of("code", newCode, "name", newName));
     }
 
     @DeleteMapping("/types/{code}")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
-    public ResponseEntity<?> deleteContractType(@PathVariable String code) {
+    public ResponseEntity<?> deleteContractType(@PathVariable String code, Authentication authentication) {
         ensureContractTypeMetaTable();
         String typeCode = normalizeContractTypeCode(code);
         if (!isValidContractTypeCode(typeCode)) {
+            operationLogService.log(authentication, "DELETE_TYPE", "CONTRACT",
+                    "删除合同类型失败：编码不合法 code=" + typeCode, "FAILED", "合同类型编码格式不正确");
             return ResponseEntity.badRequest().body(Map.of("message", "合同类型编码格式不正确"));
         }
 
         List<String> enumCodes = getContractTypeEnumCodes();
         if (!enumCodes.contains(typeCode)) {
+            operationLogService.log(authentication, "DELETE_TYPE", "CONTRACT",
+                    "删除合同类型失败：类型不存在 code=" + typeCode, "FAILED", "合同类型不存在");
             return ResponseEntity.badRequest().body(Map.of("message", "合同类型不存在"));
         }
 
         Long usedCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM contracts WHERE contract_type = ?", Long.class, typeCode);
         if (usedCount != null && usedCount > 0) {
+            operationLogService.log(authentication, "DELETE_TYPE", "CONTRACT",
+                    "删除合同类型失败：类型被使用 code=" + typeCode, "FAILED", "该类型已被合同使用，无法删除");
             return ResponseEntity.badRequest().body(Map.of("message", "该类型已被合同使用，无法删除"));
         }
 
@@ -1135,10 +1218,14 @@ public class ContractController {
             }
         }
         if (updatedCodes.isEmpty()) {
+            operationLogService.log(authentication, "DELETE_TYPE", "CONTRACT",
+                    "删除合同类型失败：至少保留一个类型", "FAILED", "至少保留一个合同类型");
             return ResponseEntity.badRequest().body(Map.of("message", "至少保留一个合同类型"));
         }
         updateContractTypeEnum(updatedCodes);
         jdbcTemplate.update("DELETE FROM contract_type_meta WHERE type_code = ?", typeCode);
+        operationLogService.log(authentication, "DELETE_TYPE", "CONTRACT",
+                "删除合同类型成功 code=" + typeCode, "SUCCESS", null);
         return ResponseEntity.ok(Map.of("message", "删除成功"));
     }
 
@@ -1334,7 +1421,27 @@ public class ContractController {
                 """;
         String columnType = jdbcTemplate.queryForObject(enumSql, String.class);
         if (columnType == null || !columnType.toLowerCase(Locale.ROOT).startsWith("enum(")) {
-            return new ArrayList<>(List.of("SALES", "PURCHASE", "SERVICE", "OTHER"));
+            LinkedHashSet<String> values = new LinkedHashSet<>(List.of("SALES", "PURCHASE", "SERVICE", "OTHER"));
+
+            List<Map<String, Object>> metaRows = jdbcTemplate.queryForList(
+                    "SELECT type_code FROM contract_type_meta");
+            for (Map<String, Object> row : metaRows) {
+                String code = normalizeContractTypeCode(asString(row.get("type_code")));
+                if (!isBlank(code)) {
+                    values.add(code);
+                }
+            }
+
+            List<Map<String, Object>> contractRows = jdbcTemplate.queryForList(
+                    "SELECT DISTINCT contract_type FROM contracts WHERE contract_type IS NOT NULL AND contract_type <> ''");
+            for (Map<String, Object> row : contractRows) {
+                String code = normalizeContractTypeCode(asString(row.get("contract_type")));
+                if (!isBlank(code)) {
+                    values.add(code);
+                }
+            }
+
+            return new ArrayList<>(values);
         }
         List<String> values = new ArrayList<>();
         Matcher matcher = ENUM_ITEM_PATTERN.matcher(columnType);
@@ -1348,6 +1455,9 @@ public class ContractController {
     }
 
     private void updateContractTypeEnum(List<String> typeCodes) {
+        if (!isContractTypeEnumColumn()) {
+            return;
+        }
         StringBuilder sql = new StringBuilder("ALTER TABLE contracts MODIFY COLUMN contract_type ENUM(");
         for (int i = 0; i < typeCodes.size(); i++) {
             if (i > 0) {
@@ -1357,6 +1467,18 @@ public class ContractController {
         }
         sql.append(") NOT NULL");
         jdbcTemplate.execute(sql.toString());
+    }
+
+    private boolean isContractTypeEnumColumn() {
+        String columnType = jdbcTemplate.queryForObject("""
+                SELECT COLUMN_TYPE
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'contracts'
+                  AND COLUMN_NAME = 'contract_type'
+                LIMIT 1
+                """, String.class);
+        return columnType != null && columnType.toLowerCase(Locale.ROOT).startsWith("enum(");
     }
 
     private void upsertContractTypeMeta(String code, String name) {

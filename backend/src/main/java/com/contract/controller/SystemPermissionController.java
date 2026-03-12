@@ -1,5 +1,6 @@
 package com.contract.controller;
 
+import com.contract.service.OperationLogService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -17,8 +18,11 @@ public class SystemPermissionController {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private OperationLogService operationLogService;
+
     @GetMapping("/users")
-    public ResponseEntity<?> getUsers(@RequestParam(required = false) String keyword) {
+    public ResponseEntity<?> getUsers(@RequestParam(required = false) String keyword, Authentication authentication) {
         StringBuilder sql = new StringBuilder("""
                 SELECT u.id,
                        u.username,
@@ -64,61 +68,73 @@ public class SystemPermissionController {
                 }
             }
         }
+        operationLogService.log(authentication, "QUERY", "PERMISSION", "查询用户角色列表", "SUCCESS", null);
         return ResponseEntity.ok(Map.of("records", records, "total", records.size()));
     }
 
     @PutMapping("/users/{id}/role")
-    public ResponseEntity<?> updateUserRole(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+    public ResponseEntity<?> updateUserRole(@PathVariable Long id, @RequestBody Map<String, Object> body, Authentication authentication) {
         Long roleId = asLong(body.get("roleId"));
         if (roleId == null) {
+            operationLogService.log(authentication, "UPDATE", "PERMISSION", "更新用户角色失败：roleId为空", "FAILED", "roleId不能为空");
             return ResponseEntity.badRequest().body(Map.of("message", "roleId不能为空"));
         }
         Long userCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM users WHERE id = ?", Long.class, id);
         if (userCount == null || userCount == 0) {
+            operationLogService.log(authentication, "UPDATE", "PERMISSION", "更新用户角色失败：用户不存在 id=" + id, "FAILED", "用户不存在");
             return ResponseEntity.notFound().build();
         }
         List<Map<String, Object>> roles = jdbcTemplate.queryForList(
                 "SELECT id, role_code FROM roles WHERE id = ? LIMIT 1", roleId);
         if (roles.isEmpty()) {
+            operationLogService.log(authentication, "UPDATE", "PERMISSION", "更新用户角色失败：角色不存在 roleId=" + roleId, "FAILED", "角色不存在");
             return ResponseEntity.badRequest().body(Map.of("message", "角色不存在"));
         }
         String roleCode = asString(roles.get(0).get("role_code"));
         String roleEnum = mapRoleCodeToUserEnum(roleCode);
         jdbcTemplate.update("UPDATE users SET role_id = ?, role = ? WHERE id = ?", roleId, roleEnum, id);
+        operationLogService.log(authentication, "UPDATE", "PERMISSION", "更新用户角色成功，userId=" + id + "，roleId=" + roleId, "SUCCESS", null);
         return ResponseEntity.ok(Map.of("message", "用户角色更新成功"));
     }
 
     @DeleteMapping("/users/{id}")
     public ResponseEntity<?> deleteUser(@PathVariable Long id, Authentication authentication) {
         if (!isAdmin(authentication)) {
+            operationLogService.log(authentication, "DELETE", "PERMISSION", "删除用户失败：非管理员 userId=" + id, "FAILED", "仅管理员可删除用户");
             return ResponseEntity.status(403).body(Map.of("message", "仅管理员可删除用户"));
         }
         List<Map<String, Object>> users = jdbcTemplate.queryForList(
                 "SELECT id, username FROM users WHERE id = ? LIMIT 1", id);
         if (users.isEmpty()) {
+            operationLogService.log(authentication, "DELETE", "PERMISSION", "删除用户失败：用户不存在 id=" + id, "FAILED", "用户不存在");
             return ResponseEntity.notFound().build();
         }
         String targetUsername = asString(users.get(0).get("username"));
         if ("admin".equalsIgnoreCase(targetUsername)) {
+            operationLogService.log(authentication, "DELETE", "PERMISSION", "删除用户失败：默认管理员不可删除", "FAILED", "默认管理员账号不可删除");
             return ResponseEntity.badRequest().body(Map.of("message", "默认管理员账号不可删除"));
         }
         String currentUsername = authentication == null ? null : authentication.getName();
         if (!isBlank(currentUsername) && currentUsername.equalsIgnoreCase(targetUsername)) {
+            operationLogService.log(authentication, "DELETE", "PERMISSION", "删除用户失败：不能删除当前登录用户 " + targetUsername, "FAILED", "不能删除当前登录用户");
             return ResponseEntity.badRequest().body(Map.of("message", "不能删除当前登录用户"));
         }
         try {
             int affected = jdbcTemplate.update("DELETE FROM users WHERE id = ?", id);
             if (affected == 0) {
+                operationLogService.log(authentication, "DELETE", "PERMISSION", "删除用户失败：用户不存在 id=" + id, "FAILED", "用户不存在");
                 return ResponseEntity.notFound().build();
             }
+            operationLogService.log(authentication, "DELETE", "PERMISSION", "删除用户成功，username=" + targetUsername + "，id=" + id, "SUCCESS", null);
             return ResponseEntity.ok(Map.of("message", "用户删除成功"));
         } catch (Exception e) {
+            operationLogService.log(authentication, "DELETE", "PERMISSION", "删除用户失败：存在关联数据 username=" + targetUsername, "FAILED", e.getMessage());
             return ResponseEntity.badRequest().body(Map.of("message", "用户存在关联数据，无法删除"));
         }
     }
 
     @GetMapping("/roles")
-    public ResponseEntity<?> getRoles() {
+    public ResponseEntity<?> getRoles(Authentication authentication) {
         List<Map<String, Object>> records = jdbcTemplate.queryForList("""
                 SELECT id,
                        role_name AS roleName,
@@ -143,20 +159,23 @@ public class SystemPermissionController {
             }
             record.put("permissionCodes", splitPermissions(asString(record.get("permissions"))));
         }
+        operationLogService.log(authentication, "QUERY", "PERMISSION", "查询角色列表", "SUCCESS", null);
         return ResponseEntity.ok(Map.of("records", records, "total", records.size()));
     }
 
     @PostMapping("/roles")
-    public ResponseEntity<?> createRole(@RequestBody Map<String, Object> body) {
+    public ResponseEntity<?> createRole(@RequestBody Map<String, Object> body, Authentication authentication) {
         String roleCode = normalizeRoleCode(asString(body.get("roleCode")));
         String roleName = asString(body.get("roleName"));
         String description = asString(body.get("description"));
         String permissions = String.join(",", extractPermissionCodes(body.get("permissionCodes")));
         if (isBlank(roleCode) || isBlank(roleName)) {
+            operationLogService.log(authentication, "CREATE", "PERMISSION", "创建角色失败：编码或名称为空", "FAILED", "角色编码和角色名称不能为空");
             return ResponseEntity.badRequest().body(Map.of("message", "角色编码和角色名称不能为空"));
         }
         Long exists = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM roles WHERE role_code = ?", Long.class, roleCode);
         if (exists != null && exists > 0) {
+            operationLogService.log(authentication, "CREATE", "PERMISSION", "创建角色失败：角色编码已存在 " + roleCode, "FAILED", "角色编码已存在");
             return ResponseEntity.badRequest().body(Map.of("message", "角色编码已存在"));
         }
         jdbcTemplate.update("""
@@ -164,25 +183,29 @@ public class SystemPermissionController {
                         VALUES (?, ?, ?, ?, 1, NOW(), NOW())
                         """,
                 roleName.trim(), roleCode, nullable(description), nullable(permissions));
+        operationLogService.log(authentication, "CREATE", "PERMISSION", "创建角色成功 " + roleCode, "SUCCESS", null);
         return ResponseEntity.ok(Map.of("message", "角色创建成功"));
     }
 
     @PutMapping("/roles/{id}")
-    public ResponseEntity<?> updateRole(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+    public ResponseEntity<?> updateRole(@PathVariable Long id, @RequestBody Map<String, Object> body, Authentication authentication) {
         String roleCode = normalizeRoleCode(asString(body.get("roleCode")));
         String roleName = asString(body.get("roleName"));
         String description = asString(body.get("description"));
         String permissions = String.join(",", extractPermissionCodes(body.get("permissionCodes")));
         if (isBlank(roleCode) || isBlank(roleName)) {
+            operationLogService.log(authentication, "UPDATE", "PERMISSION", "更新角色失败：编码或名称为空 id=" + id, "FAILED", "角色编码和角色名称不能为空");
             return ResponseEntity.badRequest().body(Map.of("message", "角色编码和角色名称不能为空"));
         }
         Long exists = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM roles WHERE id = ?", Long.class, id);
         if (exists == null || exists == 0) {
+            operationLogService.log(authentication, "UPDATE", "PERMISSION", "更新角色失败：角色不存在 id=" + id, "FAILED", "角色不存在");
             return ResponseEntity.notFound().build();
         }
         Long duplicate = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM roles WHERE role_code = ? AND id <> ?", Long.class, roleCode, id);
         if (duplicate != null && duplicate > 0) {
+            operationLogService.log(authentication, "UPDATE", "PERMISSION", "更新角色失败：角色编码已存在 " + roleCode, "FAILED", "角色编码已存在");
             return ResponseEntity.badRequest().body(Map.of("message", "角色编码已存在"));
         }
         jdbcTemplate.update("""
@@ -195,25 +218,29 @@ public class SystemPermissionController {
                         WHERE id = ?
                         """,
                 roleName.trim(), roleCode, nullable(description), nullable(permissions), id);
+        operationLogService.log(authentication, "UPDATE", "PERMISSION", "更新角色成功 id=" + id + "，roleCode=" + roleCode, "SUCCESS", null);
         return ResponseEntity.ok(Map.of("message", "角色更新成功"));
     }
 
     @DeleteMapping("/roles/{id}")
-    public ResponseEntity<?> deleteRole(@PathVariable Long id) {
+    public ResponseEntity<?> deleteRole(@PathVariable Long id, Authentication authentication) {
         Long exists = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM roles WHERE id = ?", Long.class, id);
         if (exists == null || exists == 0) {
+            operationLogService.log(authentication, "DELETE", "PERMISSION", "删除角色失败：角色不存在 id=" + id, "FAILED", "角色不存在");
             return ResponseEntity.notFound().build();
         }
         Long inUse = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM users WHERE role_id = ?", Long.class, id);
         if (inUse != null && inUse > 0) {
+            operationLogService.log(authentication, "DELETE", "PERMISSION", "删除角色失败：角色已被使用 id=" + id, "FAILED", "该角色已分配给用户，无法删除");
             return ResponseEntity.badRequest().body(Map.of("message", "该角色已分配给用户，无法删除"));
         }
         jdbcTemplate.update("DELETE FROM roles WHERE id = ?", id);
+        operationLogService.log(authentication, "DELETE", "PERMISSION", "删除角色成功 id=" + id, "SUCCESS", null);
         return ResponseEntity.ok(Map.of("message", "角色删除成功"));
     }
 
     @GetMapping("/permissions")
-    public ResponseEntity<?> getPermissions() {
+    public ResponseEntity<?> getPermissions(Authentication authentication) {
         List<Map<String, Object>> records;
         if (tableExists("permissions")) {
             records = jdbcTemplate.queryForList("""
@@ -230,7 +257,25 @@ public class SystemPermissionController {
         if (records.isEmpty()) {
             records = defaultPermissions();
         }
+        operationLogService.log(authentication, "QUERY", "PERMISSION", "查询权限列表", "SUCCESS", null);
         return ResponseEntity.ok(Map.of("records", records, "total", records.size()));
+    }
+
+    @GetMapping({"/operation-logs", "/operationLogs"})
+    public ResponseEntity<?> getOperationLogs(@RequestParam(required = false) String keyword,
+                                              @RequestParam(required = false) String username,
+                                              @RequestParam(required = false) String module,
+                                              @RequestParam(required = false) String operationType,
+                                              @RequestParam(required = false) String status,
+                                              @RequestParam(required = false) String startTime,
+                                              @RequestParam(required = false) String endTime,
+                                              @RequestParam(defaultValue = "1") int page,
+                                              @RequestParam(defaultValue = "10") int size,
+                                              Authentication authentication) {
+        Map<String, Object> result = operationLogService.queryLogs(
+                keyword, username, module, operationType, status, startTime, endTime, page, size
+        );
+        return ResponseEntity.ok(result);
     }
 
     private static String normalizeRoleCode(String roleCode) {

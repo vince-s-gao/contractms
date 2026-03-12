@@ -72,6 +72,65 @@
       </el-table>
     </el-card>
 
+    <el-card class="section-card" header="操作日志">
+      <div class="toolbar logs-toolbar">
+        <el-input
+          v-model="logFilters.keyword"
+          placeholder="关键字（描述/URL/操作类型）"
+          clearable
+          style="width: 260px"
+          @keyup.enter="loadOperationLogs"
+        />
+        <el-input
+          v-model="logFilters.username"
+          placeholder="用户名"
+          clearable
+          style="width: 160px"
+          @keyup.enter="loadOperationLogs"
+        />
+        <el-select v-model="logFilters.module" placeholder="模块" clearable style="width: 140px">
+          <el-option label="认证" value="AUTH" />
+          <el-option label="合同" value="CONTRACT" />
+          <el-option label="权限" value="PERMISSION" />
+          <el-option label="日志" value="OPERATION_LOG" />
+        </el-select>
+        <el-select v-model="logFilters.status" placeholder="状态" clearable style="width: 120px">
+          <el-option label="成功" value="SUCCESS" />
+          <el-option label="失败" value="FAILED" />
+        </el-select>
+        <el-button type="primary" @click="handleLogSearch">搜索</el-button>
+        <el-button @click="handleLogReset">重置</el-button>
+      </div>
+
+      <el-table v-loading="logLoading" :data="operationLogList" stripe>
+        <el-table-column prop="operationTime" label="时间" min-width="160" />
+        <el-table-column prop="username" label="用户" min-width="120" />
+        <el-table-column prop="module" label="模块" min-width="120" />
+        <el-table-column prop="operationType" label="操作类型" min-width="140" />
+        <el-table-column prop="description" label="描述" min-width="320" show-overflow-tooltip />
+        <el-table-column label="状态" width="100">
+          <template #default="{ row }">
+            <el-tag :type="row.status === 'SUCCESS' ? 'success' : 'danger'" size="small">
+              {{ row.status === "SUCCESS" ? "成功" : "失败" }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="ipAddress" label="IP" min-width="140" />
+      </el-table>
+
+      <div class="logs-pagination">
+        <el-pagination
+          v-model:current-page="logPagination.page"
+          v-model:page-size="logPagination.size"
+          :total="logPagination.total"
+          :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next"
+          @current-change="loadOperationLogs"
+          @size-change="handleLogSizeChange"
+        />
+      </div>
+    </el-card>
+
     <el-dialog
       v-model="roleDialogVisible"
       :title="editingRoleId ? '编辑角色' : '新增角色'"
@@ -126,11 +185,13 @@ import {
   createSystemRole,
   deleteSystemUser,
   deleteSystemRole,
+  getOperationLogs,
   getSystemPermissions,
   getSystemRoles,
   getSystemUsers,
   updateSystemRole,
   updateSystemUserRole,
+  type OperationLogItem,
   type PermissionItem,
   type RoleItem,
   type UserPermissionItem,
@@ -148,11 +209,24 @@ interface RoleForm {
 const userLoading = ref(false);
 const roleLoading = ref(false);
 const saveRoleLoading = ref(false);
+const logLoading = ref(false);
 const userKeyword = ref("");
 
 const userList = ref<UserPermissionItem[]>([]);
 const roleList = ref<RoleItem[]>([]);
 const permissionList = ref<PermissionItem[]>([]);
+const operationLogList = ref<OperationLogItem[]>([]);
+const logFilters = reactive({
+  keyword: "",
+  username: "",
+  module: "",
+  status: "",
+});
+const logPagination = reactive({
+  page: 1,
+  size: 10,
+  total: 0,
+});
 
 const roleDialogVisible = ref(false);
 const editingRoleId = ref<number | null>(null);
@@ -308,6 +382,52 @@ const handleDeleteRole = async (role: RoleItem) => {
   }
 };
 
+const loadOperationLogs = async () => {
+  logLoading.value = true;
+  try {
+    const data = await getOperationLogs({
+      page: logPagination.page,
+      size: logPagination.size,
+      keyword: logFilters.keyword.trim() || undefined,
+      username: logFilters.username.trim() || undefined,
+      module: logFilters.module || undefined,
+      status: logFilters.status || undefined,
+    });
+    operationLogList.value = data.records || data.data?.records || [];
+    logPagination.total = Number(data.total || data.data?.total || 0);
+  } catch (error) {
+    console.error("加载操作日志失败:", error);
+    const message = extractErrorMessage(error, "加载操作日志失败");
+    if (message.includes("404")) {
+      ElMessage.error("操作日志接口未就绪，请重启后端服务后重试");
+    } else {
+      ElMessage.error(message);
+    }
+  } finally {
+    logLoading.value = false;
+  }
+};
+
+const handleLogSearch = () => {
+  logPagination.page = 1;
+  loadOperationLogs();
+};
+
+const handleLogReset = () => {
+  logFilters.keyword = "";
+  logFilters.username = "";
+  logFilters.module = "";
+  logFilters.status = "";
+  logPagination.page = 1;
+  loadOperationLogs();
+};
+
+const handleLogSizeChange = (size: number) => {
+  logPagination.size = size;
+  logPagination.page = 1;
+  loadOperationLogs();
+};
+
 onMounted(async () => {
   userStore.loadUserInfoFromStorage();
   currentUsername.value = String(userStore.userInfo?.username || "");
@@ -315,7 +435,7 @@ onMounted(async () => {
     /admin/i.test(String(userStore.userInfo?.role || "")) ||
     /admin/i.test(currentUsername.value);
   await Promise.all([loadPermissions(), loadRoles()]);
-  await loadUsers();
+  await Promise.all([loadUsers(), loadOperationLogs()]);
 });
 </script>
 
@@ -328,8 +448,19 @@ onMounted(async () => {
   .toolbar {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 10px;
     margin-bottom: 12px;
+  }
+
+  .logs-toolbar {
+    row-gap: 8px;
+  }
+
+  .logs-pagination {
+    margin-top: 12px;
+    display: flex;
+    justify-content: flex-end;
   }
 }
 </style>

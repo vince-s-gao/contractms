@@ -1,5 +1,9 @@
 import request from "./index";
 
+const silentErrorHeaders = {
+  "X-Silent-Error-Message": "true",
+};
+
 export interface PermissionItem {
   code: string;
   name: string;
@@ -23,6 +27,20 @@ export interface UserPermissionItem {
   roleName?: string;
   roleCode?: string;
   enabled?: number;
+}
+
+export interface OperationLogItem {
+  id: number;
+  username: string;
+  module: string;
+  operationType: string;
+  description: string;
+  status: string;
+  ipAddress?: string;
+  requestMethod?: string;
+  requestUrl?: string;
+  errorMessage?: string;
+  operationTime: string;
 }
 
 export const getSystemUsers = (keyword?: string) => {
@@ -95,5 +113,34 @@ export const getSystemPermissions = () => {
   return request({
     url: "/system/permissions",
     method: "get",
+  });
+};
+
+export const getOperationLogs = (params: {
+  page?: number;
+  size?: number;
+  keyword?: string;
+  username?: string;
+  module?: string;
+  operationType?: string;
+  status?: string;
+  startTime?: string;
+  endTime?: string;
+}) => {
+  return request({
+    url: "/system/operation-logs",
+    method: "get",
+    params,
+    headers: silentErrorHeaders,
+  }).catch((error: { response?: { status?: number } }) => {
+    if (error?.response?.status === 404) {
+      return request({
+        url: "/system/operationLogs",
+        method: "get",
+        params,
+        headers: silentErrorHeaders,
+      });
+    }
+    return Promise.reject(error);
   });
 };
