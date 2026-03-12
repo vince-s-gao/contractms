@@ -2,6 +2,7 @@ package com.contract.controller;
 
 import com.contract.service.ContractExportService;
 import com.contract.service.ContractImportService;
+import com.contract.service.ContractQueryService;
 import com.contract.service.OperationLogService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -52,6 +53,9 @@ public class ContractController {
     @Autowired
     private OperationLogService operationLogService;
 
+    @Autowired
+    private ContractQueryService contractQueryService;
+
     @Value("${app.upload-dir:/app/uploads}")
     private String uploadDir;
 
@@ -68,147 +72,10 @@ public class ContractController {
                                           @RequestParam(required = false, name = "status") String status,
                                           @RequestParam(required = false, name = "startDate") String startDate,
                                           @RequestParam(required = false, name = "endDate") String endDate) {
-        int safePage = Math.max(page, 1);
-        int safeSize = Math.max(size, 1);
-        int offset = (safePage - 1) * safeSize;
-
-        StringBuilder listSql = new StringBuilder("""
-                SELECT c.id,
-                       c.id AS contractId,
-                       c.contract_no AS contractNo,
-                       c.contract_no AS contractNumber,
-                       c.signing_year AS signingYear,
-                       c.contract_name AS contractName,
-                       c.party_a AS customerName,
-                       c.party_b AS companySignatory,
-                       c.contract_type AS contractType,
-                       c.amount AS amount,
-                       COALESCE(c.tax_rate, 0) AS taxRate,
-                       ROUND(
-                           CASE
-                               WHEN COALESCE(c.tax_rate, 0) = 0 THEN 0
-                               ELSE COALESCE(c.amount, 0) * COALESCE(c.tax_rate, 0) / (100 + COALESCE(c.tax_rate, 0))
-                           END,
-                           2
-                       ) AS taxAmount,
-                       ROUND(
-                           CASE
-                               WHEN COALESCE(c.tax_rate, 0) = 0 THEN COALESCE(c.amount, 0)
-                               ELSE COALESCE(c.amount, 0) / (1 + COALESCE(c.tax_rate, 0) / 100)
-                           END,
-                           2
-                       ) AS amountWithoutTax,
-                       'Vince Gao' AS createdBy,
-                       DATE_FORMAT(c.created_time, '%Y-%m-%d %H:%i:%s') AS createdAt,
-                       DATE_FORMAT(c.start_date, '%Y-%m-%d') AS startDate,
-                       DATE_FORMAT(c.end_date, '%Y-%m-%d') AS endDate,
-                       CASE c.status
-                           WHEN 'DRAFT' THEN 'draft'
-                           WHEN 'PENDING' THEN 'approving'
-                           WHEN 'APPROVED' THEN 'active'
-                           WHEN 'EXECUTING' THEN 'active'
-                           WHEN 'COMPLETED' THEN 'active'
-                           WHEN 'TERMINATED' THEN 'terminated'
-                           ELSE 'draft'
-                       END AS status
-                FROM contracts c
-                WHERE 1=1
-                """);
-        List<Object> params = new ArrayList<>();
-        if (!isBlank(keyword)) {
-            listSql.append(" AND (c.contract_no LIKE ? OR c.contract_name LIKE ? OR c.party_a LIKE ?)");
-            String likeKeyword = "%" + keyword.trim() + "%";
-            params.add(likeKeyword);
-            params.add(likeKeyword);
-            params.add(likeKeyword);
-        }
-        if (!isBlank(customerName)) {
-            listSql.append(" AND c.party_a LIKE ?");
-            params.add("%" + customerName.trim() + "%");
-        }
-        if (!isBlank(contractType)) {
-            listSql.append(" AND c.contract_type = ?");
-            params.add(normalizeContractTypeCode(contractType));
-        }
-        List<Integer> signingYearList = parseSigningYears(signingYears);
-        if (!signingYearList.isEmpty()) {
-            listSql.append(" AND c.signing_year IN (");
-            appendPlaceholders(listSql, signingYearList.size());
-            listSql.append(")");
-            params.addAll(signingYearList);
-        } else if (signingYear != null) {
-            listSql.append(" AND c.signing_year = ?");
-            params.add(signingYear);
-        }
-        if (!isBlank(status)) {
-            listSql.append(" AND c.status = ?");
-            params.add(toContractDbStatus(status));
-        }
-        if (!isBlank(startDate)) {
-            listSql.append(" AND c.start_date >= ?");
-            params.add(startDate);
-        }
-        if (!isBlank(endDate)) {
-            listSql.append(" AND c.end_date <= ?");
-            params.add(endDate);
-        }
-        String orderByColumn = resolveContractSortColumn(sortBy);
-        String orderByDirection = resolveSortDirection(sortOrder);
-        if (orderByColumn == null) {
-            listSql.append(" ORDER BY COALESCE(c.updated_time, c.created_time) DESC, c.id DESC");
-        } else {
-            listSql.append(" ORDER BY ").append(orderByColumn).append(" ").append(orderByDirection).append(", c.id DESC");
-        }
-        listSql.append(" LIMIT ? OFFSET ?");
-        params.add(safeSize);
-        params.add(offset);
-        List<Map<String, Object>> records = jdbcTemplate.queryForList(listSql.toString(), params.toArray());
-
-        StringBuilder countSql = new StringBuilder("SELECT COUNT(*) FROM contracts c WHERE 1=1");
-        List<Object> countParams = new ArrayList<>();
-        if (!isBlank(keyword)) {
-            countSql.append(" AND (c.contract_no LIKE ? OR c.contract_name LIKE ? OR c.party_a LIKE ?)");
-            String likeKeyword = "%" + keyword.trim() + "%";
-            countParams.add(likeKeyword);
-            countParams.add(likeKeyword);
-            countParams.add(likeKeyword);
-        }
-        if (!isBlank(customerName)) {
-            countSql.append(" AND c.party_a LIKE ?");
-            countParams.add("%" + customerName.trim() + "%");
-        }
-        if (!isBlank(contractType)) {
-            countSql.append(" AND c.contract_type = ?");
-            countParams.add(normalizeContractTypeCode(contractType));
-        }
-        if (!signingYearList.isEmpty()) {
-            countSql.append(" AND c.signing_year IN (");
-            appendPlaceholders(countSql, signingYearList.size());
-            countSql.append(")");
-            countParams.addAll(signingYearList);
-        } else if (signingYear != null) {
-            countSql.append(" AND c.signing_year = ?");
-            countParams.add(signingYear);
-        }
-        if (!isBlank(status)) {
-            countSql.append(" AND c.status = ?");
-            countParams.add(toContractDbStatus(status));
-        }
-        if (!isBlank(startDate)) {
-            countSql.append(" AND c.start_date >= ?");
-            countParams.add(startDate);
-        }
-        if (!isBlank(endDate)) {
-            countSql.append(" AND c.end_date <= ?");
-            countParams.add(endDate);
-        }
-        Long total = jdbcTemplate.queryForObject(countSql.toString(), Long.class, countParams.toArray());
-        Map<String, Object> result = new HashMap<>();
-        result.put("records", records);
-        result.put("total", total == null ? 0 : total);
-        result.put("page", safePage);
-        result.put("size", safeSize);
-        return ResponseEntity.ok(result);
+        return ResponseEntity.ok(contractQueryService.queryContracts(
+                page, size, keyword, customerName, contractType, signingYear, signingYears,
+                sortBy, sortOrder, status, startDate, endDate
+        ));
     }
 
     @GetMapping("/signing-years")
@@ -647,7 +514,7 @@ public class ContractController {
                            2
                        ) AS amountWithoutTax,
                        'Vince Gao' AS createdBy,
-                       DATE_FORMAT(c.created_time, '%Y-%m-%d %H:%i:%s') AS createdAt,
+                       DATE_FORMAT(CONVERT_TZ(c.created_time, '+00:00', '+08:00'), '%Y-%m-%d %H:%i:%s') AS createdAt,
                        DATE_FORMAT(c.start_date, '%Y-%m-%d') AS startDate,
                        DATE_FORMAT(c.end_date, '%Y-%m-%d') AS endDate,
                        c.description AS description,
@@ -743,7 +610,7 @@ public class ContractController {
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
     public ResponseEntity<?> update(@PathVariable Long id, @RequestBody Map<String, Object> request, Authentication authentication) {
         List<Map<String, Object>> existed = jdbcTemplate.queryForList(
-                "SELECT id, contract_no FROM contracts WHERE id = ?", id);
+                "SELECT id, contract_no, status FROM contracts WHERE id = ?", id);
         if (existed.isEmpty()) {
             operationLogService.log(authentication, "UPDATE", "CONTRACT",
                     "更新合同失败：合同不存在 id=" + id, "FAILED", "合同不存在");
@@ -751,6 +618,13 @@ public class ContractController {
         }
 
         String currentNo = asString(existed.get(0).get("contract_no"));
+        String currentStatus = asString(existed.get(0).get("status"));
+        boolean isAdmin = isAdmin(authentication);
+        if (!isAdmin && !"DRAFT".equalsIgnoreCase(currentStatus)) {
+            operationLogService.log(authentication, "UPDATE", "CONTRACT",
+                    "更新合同失败：非管理员编辑非草稿合同 id=" + id + ", status=" + currentStatus, "FAILED", "仅管理员可编辑已审批合同");
+            return ResponseEntity.status(403).body(Map.of("message", "仅管理员可编辑已审批合同"));
+        }
         String contractNo = asString(request.get("contractNo"));
         if (!isBlank(contractNo) && !contractNo.equals(currentNo) && existsContractNo(contractNo, id)) {
             operationLogService.log(authentication, "UPDATE", "CONTRACT",
@@ -759,6 +633,7 @@ public class ContractController {
         }
         String finalContractNo = isBlank(contractNo) ? currentNo : contractNo;
         Integer signingYear = extractSigningYearFromContractNo(finalContractNo);
+        String resetStatus = isAdmin && isApprovedOrRejectedStatus(currentStatus) ? "DRAFT" : null;
 
         String updateSql = """
                 UPDATE contracts
@@ -773,6 +648,7 @@ public class ContractController {
                     description = COALESCE(?, description),
                     party_a = COALESCE(?, party_a),
                     party_b = COALESCE(?, party_b),
+                    status = COALESCE(?, status),
                     updated_by = COALESCE(?, updated_by),
                     updated_time = NOW()
                 WHERE id = ?
@@ -794,10 +670,13 @@ public class ContractController {
                 nullable(asString(request.get("description"))),
                 nullable(asString(request.get("partyName"))),
                 nullable(asString(request.get("partyContact"))),
+                resetStatus,
                 asLong(request.get("updatedBy"), null),
                 id);
         operationLogService.log(authentication, "UPDATE", "CONTRACT",
-                "更新合同成功 id=" + id + ", contractNo=" + finalContractNo, "SUCCESS", null);
+                "更新合同成功 id=" + id + ", contractNo=" + finalContractNo
+                        + (resetStatus == null ? "" : ", statusResetTo=DRAFT"),
+                "SUCCESS", null);
         return getById(id);
     }
 
@@ -825,6 +704,13 @@ public class ContractController {
                     "提交审批失败：合同不存在 id=" + id, "FAILED", "合同不存在");
             return ResponseEntity.notFound().build();
         }
+        Long submitterId = resolveCurrentUserId(authentication);
+        jdbcTemplate.update("""
+                        INSERT INTO approval_records (
+                            contract_id, approver_id, approval_result, approval_opinion, approval_time, next_approver_id
+                        ) VALUES (?, ?, 0, '提交审批', NOW(), NULL)
+                        """,
+                id, submitterId);
         operationLogService.log(authentication, "SUBMIT_APPROVAL", "CONTRACT",
                 "提交审批成功 id=" + id, "SUCCESS", null);
         return ResponseEntity.ok(Map.of("message", "提交审批成功"));
@@ -850,9 +736,67 @@ public class ContractController {
                     "UPDATE contracts SET description = CONCAT(COALESCE(description, ''), '\\n审批备注: ', ?) WHERE id = ?",
                     comment, id);
         }
+        Long approverId = resolveCurrentUserId(authentication);
+        jdbcTemplate.update("""
+                        INSERT INTO approval_records (
+                            contract_id, approver_id, approval_result, approval_opinion, approval_time, next_approver_id
+                        ) VALUES (?, ?, ?, ?, NOW(), NULL)
+                        """,
+                id, approverId, approved ? 1 : 2, nullable(comment));
         operationLogService.log(authentication, approved ? "APPROVE" : "REJECT", "CONTRACT",
                 (approved ? "审批通过" : "审批拒绝") + " id=" + id, "SUCCESS", null);
         return ResponseEntity.ok(Map.of("message", approved ? "审批通过" : "审批拒绝"));
+    }
+
+    @GetMapping("/{id}/approval-records")
+    public ResponseEntity<?> getApprovalRecords(@PathVariable Long id) {
+        List<Map<String, Object>> contractRows = jdbcTemplate.queryForList("""
+                SELECT status,
+                       COALESCE(description, '') AS description,
+                       DATE_FORMAT(CONVERT_TZ(COALESCE(updated_time, created_time), '+00:00', '+08:00'), '%Y-%m-%d %H:%i:%s') AS fallbackTime
+                FROM contracts
+                WHERE id = ?
+                LIMIT 1
+                """, id);
+        if (contractRows.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        List<Map<String, Object>> records = jdbcTemplate.queryForList("""
+                SELECT ar.id,
+                       COALESCE(u.real_name, u.username, '系统') AS approver,
+                       CASE ar.approval_result
+                           WHEN 0 THEN 'pending'
+                           WHEN 1 THEN 'approved'
+                           WHEN 2 THEN 'rejected'
+                           ELSE 'pending'
+                       END AS status,
+                       COALESCE(ar.approval_opinion, '') AS comment,
+                       DATE_FORMAT(CONVERT_TZ(ar.approval_time, '+00:00', '+08:00'), '%Y-%m-%d %H:%i:%s') AS createdAt
+                FROM approval_records ar
+                LEFT JOIN users u ON u.id = ar.approver_id
+                WHERE ar.contract_id = ?
+                ORDER BY ar.approval_time DESC, ar.id DESC
+                """, id);
+        if (records.isEmpty()) {
+            String contractStatus = asString(contractRows.get(0).get("status"));
+            String fallbackStatus = switch (contractStatus == null ? "" : contractStatus.toUpperCase(Locale.ROOT)) {
+                case "PENDING" -> "pending";
+                case "TERMINATED" -> "rejected";
+                case "APPROVED", "EXECUTING", "COMPLETED" -> "approved";
+                default -> null;
+            };
+            if (!isBlank(fallbackStatus)) {
+                String fallbackComment = "历史合同未记录审批留痕";
+                records = List.of(Map.of(
+                        "id", "fallback-" + id,
+                        "approver", "系统",
+                        "status", fallbackStatus,
+                        "comment", fallbackComment,
+                        "createdAt", asString(contractRows.get(0).get("fallbackTime"))
+                ));
+            }
+        }
+        return ResponseEntity.ok(Map.of("records", records, "total", records.size()));
     }
 
     @PutMapping("/{id}/status")
@@ -896,11 +840,12 @@ public class ContractController {
                        c.contract_type AS contractType,
                        c.amount AS amount,
                        'Vince Gao' AS createdBy,
-                       DATE_FORMAT(c.created_time, '%Y-%m-%d %H:%i:%s') AS createdAt,
-                       DATE_FORMAT(c.created_time, '%Y-%m-%d %H:%i:%s') AS applyTime,
+                       DATE_FORMAT(CONVERT_TZ(c.created_time, '+00:00', '+08:00'), '%Y-%m-%d %H:%i:%s') AS createdAt,
+                       DATE_FORMAT(CONVERT_TZ(c.created_time, '+00:00', '+08:00'), '%Y-%m-%d %H:%i:%s') AS applyTime,
                        c.description AS description,
                        CASE c.status
                            WHEN 'PENDING' THEN 'pending'
+                           WHEN 'DRAFT' THEN 'draft'
                            WHEN 'TERMINATED' THEN 'rejected'
                            ELSE 'approved'
                        END AS status
@@ -919,6 +864,9 @@ public class ContractController {
                 params.add(dbStatusFilter.get(i));
             }
             sql.append(")");
+        } else {
+            // 审批页默认只展示已进入审批流的合同，避免草稿合同被误显示为“已通过”
+            sql.append(" AND c.status IN ('PENDING','APPROVED','EXECUTING','COMPLETED','TERMINATED')");
         }
         sql.append(" ORDER BY c.id DESC LIMIT ? OFFSET ?");
         params.add(safeSize);
@@ -938,6 +886,8 @@ public class ContractController {
                 countParams.add(dbStatusFilter.get(i));
             }
             countSql.append(")");
+        } else {
+            countSql.append(" AND c.status IN ('PENDING','APPROVED','EXECUTING','COMPLETED','TERMINATED')");
         }
         Long total = jdbcTemplate.queryForObject(countSql.toString(), Long.class, countParams.toArray());
 
@@ -945,6 +895,63 @@ public class ContractController {
         result.put("records", records);
         result.put("total", total == null ? 0 : total);
         return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/approval-records")
+    public ResponseEntity<?> getApprovalRecords(@RequestParam(required = false) String status,
+                                                @RequestParam(defaultValue = "1") int page,
+                                                @RequestParam(defaultValue = "10") int size) {
+        int safePage = Math.max(page, 1);
+        int safeSize = Math.max(size, 1);
+        int offset = (safePage - 1) * safeSize;
+
+        StringBuilder sql = new StringBuilder("""
+                SELECT ar.id,
+                       ar.contract_id AS contractId,
+                       COALESCE(c.contract_no, '') AS contractNo,
+                       COALESCE(c.contract_name, '') AS contractName,
+                       COALESCE(u.real_name, u.username, '系统') AS approver,
+                       CASE ar.approval_result
+                           WHEN 0 THEN 'pending'
+                           WHEN 1 THEN 'approved'
+                           WHEN 2 THEN 'rejected'
+                           ELSE 'pending'
+                       END AS status,
+                       COALESCE(ar.approval_opinion, '') AS comment,
+                       DATE_FORMAT(CONVERT_TZ(ar.approval_time, '+00:00', '+08:00'), '%Y-%m-%d %H:%i:%s') AS approvalTime
+                FROM approval_records ar
+                LEFT JOIN contracts c ON c.id = ar.contract_id
+                LEFT JOIN users u ON u.id = ar.approver_id
+                WHERE 1=1
+                """);
+        StringBuilder countSql = new StringBuilder("""
+                SELECT COUNT(*)
+                FROM approval_records ar
+                WHERE 1=1
+                """);
+        List<Object> params = new ArrayList<>();
+        List<Object> countParams = new ArrayList<>();
+
+        Integer resultCode = toApprovalResultCode(status);
+        if (resultCode != null) {
+            sql.append(" AND ar.approval_result = ?");
+            countSql.append(" AND ar.approval_result = ?");
+            params.add(resultCode);
+            countParams.add(resultCode);
+        }
+
+        sql.append(" ORDER BY ar.approval_time DESC, ar.id DESC LIMIT ? OFFSET ?");
+        params.add(safeSize);
+        params.add(offset);
+
+        List<Map<String, Object>> records = jdbcTemplate.queryForList(sql.toString(), params.toArray());
+        Long total = jdbcTemplate.queryForObject(countSql.toString(), Long.class, countParams.toArray());
+        return ResponseEntity.ok(Map.of(
+                "records", records,
+                "total", total == null ? 0 : total,
+                "page", safePage,
+                "size", safeSize
+        ));
     }
 
     @GetMapping("/expiring")
@@ -991,8 +998,8 @@ public class ContractController {
                        SUM(CASE WHEN status IN ('APPROVED', 'EXECUTING', 'COMPLETED') THEN 1 ELSE 0 END) AS activeContracts,
                        SUM(CASE WHEN contract_type = 'SALES' THEN COALESCE(amount, 0) ELSE 0 END) AS salesRevenue,
                        SUM(CASE WHEN contract_type = 'PURCHASE' THEN COALESCE(amount, 0) ELSE 0 END) AS purchaseCost,
-                       SUM(CASE WHEN created_time >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
-                                 AND created_time < DATE_ADD(LAST_DAY(CURDATE()), INTERVAL 1 DAY)
+                       SUM(CASE WHEN CONVERT_TZ(created_time, '+00:00', '+08:00') >= DATE_FORMAT(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00'), '%Y-%m-01')
+                                 AND CONVERT_TZ(created_time, '+00:00', '+08:00') < DATE_ADD(LAST_DAY(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00')), INTERVAL 1 DAY)
                                 THEN 1 ELSE 0 END) AS newThisMonth
                 FROM contracts
                 WHERE 1=1
@@ -1264,6 +1271,41 @@ public class ContractController {
         return new ArrayList<>(result);
     }
 
+    private static boolean isApprovedOrRejectedStatus(String status) {
+        if (isBlank(status)) {
+            return false;
+        }
+        String normalized = status.trim().toUpperCase(Locale.ROOT);
+        return "APPROVED".equals(normalized)
+                || "EXECUTING".equals(normalized)
+                || "COMPLETED".equals(normalized)
+                || "TERMINATED".equals(normalized);
+    }
+
+    private Long resolveCurrentUserId(Authentication authentication) {
+        if (authentication == null || isBlank(authentication.getName())) {
+            return 1L;
+        }
+        try {
+            return jdbcTemplate.queryForObject(
+                    "SELECT id FROM users WHERE username = ? LIMIT 1",
+                    Long.class,
+                    authentication.getName()
+            );
+        } catch (Exception e) {
+            return 1L;
+        }
+    }
+
+    private static boolean isAdmin(Authentication authentication) {
+        if (authentication == null) {
+            return false;
+        }
+        return authentication.getAuthorities().stream().anyMatch(
+                authority -> "ROLE_ADMIN".equalsIgnoreCase(authority.getAuthority())
+                        || "ROLE_ROLE_ADMIN".equalsIgnoreCase(authority.getAuthority()));
+    }
+
     private static String toContractDbStatus(String status) {
         if (isBlank(status)) {
             return "DRAFT";
@@ -1273,6 +1315,18 @@ public class ContractController {
             case "active", "approved", "executing", "completed" -> "APPROVED";
             case "terminated", "rejected" -> "TERMINATED";
             default -> "DRAFT";
+        };
+    }
+
+    private static Integer toApprovalResultCode(String status) {
+        if (isBlank(status)) {
+            return null;
+        }
+        return switch (status.trim().toLowerCase(Locale.ROOT)) {
+            case "pending" -> 0;
+            case "approved" -> 1;
+            case "rejected" -> 2;
+            default -> null;
         };
     }
 
@@ -1325,7 +1379,7 @@ public class ContractController {
                            attachment_name AS name,
                            file_size AS size,
                            file_type AS fileType,
-                           DATE_FORMAT(created_at, '%Y-%m-%d %H:%i:%s') AS uploadTime
+                           DATE_FORMAT(CONVERT_TZ(created_at, '+00:00', '+08:00'), '%Y-%m-%d %H:%i:%s') AS uploadTime
                     FROM contract_attachments
                     WHERE contract_id = ?
                       AND COALESCE(deleted_flag, 0) = 0
@@ -1337,7 +1391,7 @@ public class ContractController {
                        file_name AS name,
                        file_size AS size,
                        file_type AS fileType,
-                       DATE_FORMAT(created_time, '%Y-%m-%d %H:%i:%s') AS uploadTime
+                       DATE_FORMAT(CONVERT_TZ(created_time, '+00:00', '+08:00'), '%Y-%m-%d %H:%i:%s') AS uploadTime
                 FROM contract_attachments
                 WHERE contract_id = ?
                 ORDER BY created_time DESC, id DESC
@@ -1460,10 +1514,14 @@ public class ContractController {
         }
         StringBuilder sql = new StringBuilder("ALTER TABLE contracts MODIFY COLUMN contract_type ENUM(");
         for (int i = 0; i < typeCodes.size(); i++) {
+            String code = normalizeContractTypeCode(typeCodes.get(i));
+            if (!isValidContractTypeCode(code)) {
+                throw new IllegalArgumentException("检测到非法合同类型编码，拒绝执行DDL: " + typeCodes.get(i));
+            }
             if (i > 0) {
                 sql.append(",");
             }
-            sql.append("'").append(typeCodes.get(i)).append("'");
+            sql.append("'").append(escapeSqlLiteral(code)).append("'");
         }
         sql.append(") NOT NULL");
         jdbcTemplate.execute(sql.toString());
@@ -1519,6 +1577,13 @@ public class ContractController {
             case "OTHER" -> "其他";
             default -> code;
         };
+    }
+
+    private static String escapeSqlLiteral(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.replace("'", "''");
     }
 
     private static BigDecimal asBigDecimal(Object value) {
@@ -1672,21 +1737,6 @@ public class ContractController {
         return number == null ? null : number.longValue();
     }
 
-    private Long resolveCurrentUserId(Authentication authentication) {
-        if (authentication == null || authentication.getName() == null || authentication.getName().isBlank()) {
-            return 1L;
-        }
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT id FROM users WHERE username = ? LIMIT 1",
-                authentication.getName()
-        );
-        if (rows.isEmpty()) {
-            return 1L;
-        }
-        Object value = rows.get(0).get("id");
-        return asLong(value, 1L);
-    }
-
     private String generateImportContractNo(int rowNumber) {
         return "IMP" + System.currentTimeMillis() + rowNumber + (int) (Math.random() * 1000);
     }
@@ -1734,7 +1784,7 @@ public class ContractController {
                        c.contract_type AS contractType,
                        c.amount AS amount,
                        'Vince Gao' AS createdBy,
-                       DATE_FORMAT(c.created_time, '%Y-%m-%d %H:%i:%s') AS createdAt,
+                       DATE_FORMAT(CONVERT_TZ(c.created_time, '+00:00', '+08:00'), '%Y-%m-%d %H:%i:%s') AS createdAt,
                        DATE_FORMAT(c.start_date, '%Y-%m-%d') AS startDate,
                        DATE_FORMAT(c.end_date, '%Y-%m-%d') AS endDate,
                        CASE c.status

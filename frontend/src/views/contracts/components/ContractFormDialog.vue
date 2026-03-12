@@ -276,6 +276,7 @@ import {
   type ContractUpsertPayload,
   type ContractTypeItem,
 } from "@/api/contract";
+import { DEFAULT_CONTRACT_TYPE_LIST } from "@/constants/contract";
 import { useUserStore } from "@/stores/user";
 import { extractErrorMessage } from "@/utils/error";
 
@@ -335,12 +336,7 @@ const formRef = ref<FormInstance>();
 const fileList = ref<UploadFile[]>([]);
 const existingAttachments = ref<ContractAttachment[]>([]);
 const deletingAttachmentId = ref<number | null>(null);
-const contractTypeOptions = ref<ContractTypeItem[]>([
-  { code: "SALES", name: "销售合同" },
-  { code: "PURCHASE", name: "采购合同" },
-  { code: "SERVICE", name: "服务合同" },
-  { code: "OTHER", name: "其他" },
-]);
+const contractTypeOptions = ref<ContractTypeItem[]>([...DEFAULT_CONTRACT_TYPE_LIST]);
 
 const isEdit = computed(() => !!props.contractData);
 const formTitle = computed(() => (isEdit.value ? "编辑合同" : "新建合同"));

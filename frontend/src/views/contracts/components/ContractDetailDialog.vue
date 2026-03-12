@@ -102,7 +102,10 @@
 
       <!-- 审批记录 -->
       <el-card class="detail-section" header="审批记录">
-        <el-timeline>
+        <div v-if="approvalRecords.length === 0" class="no-approval-records">
+          暂无审批记录
+        </div>
+        <el-timeline v-else>
           <el-timeline-item
             v-for="record in approvalRecords"
             :key="record.id"
@@ -118,9 +121,14 @@
 
     <template #footer>
       <el-button @click="handleClose">关闭</el-button>
-      <el-button v-if="contractDetail?.status === 'draft'" type="primary"
-        >提交审批</el-button
+      <el-button
+        v-if="contractDetail?.status === 'draft'"
+        type="primary"
+        :loading="submittingApproval"
+        @click="handleSubmitApproval"
       >
+        提交审批
+      </el-button>
     </template>
   </el-dialog>
 </template>
@@ -131,7 +139,10 @@ import { ElMessage } from "element-plus";
 import {
   downloadContractAttachment,
   getContractAttachments,
+  getContractApprovalRecords,
   getContractById,
+  submitForApproval,
+  type ContractApprovalRecord,
   type ContractAttachment,
 } from "@/api/contract";
 import { extractErrorMessage } from "@/utils/error";
@@ -170,7 +181,7 @@ interface Attachment extends ContractAttachment {
 }
 
 interface ApprovalRecord {
-  id: string;
+  id: string | number;
   approver: string;
   status: string;
   comment?: string;
@@ -213,10 +224,12 @@ const props = defineProps<{
 const emit = defineEmits<{
   "update:modelValue": [value: boolean];
   close: [];
+  submitted: [];
 }>();
 
 const visible = ref(false);
 const loading = ref(false);
+const submittingApproval = ref(false);
 const contractDetail = ref<ContractDetail | null>(null);
 const participants = ref<Participant[]>([]);
 const attachments = ref<Attachment[]>([]);
@@ -263,10 +276,9 @@ const loadContractDetail = async () => {
       content: data.content || data.description || "",
     };
 
-    // 现有后端未提供详情参与人员/审批记录，先清空避免展示假数据
     participants.value = [];
-    approvalRecords.value = [];
     await loadAttachments(contractDetail.value.id);
+    await loadApprovalRecords(contractDetail.value.id);
   } catch (error) {
     console.error("加载合同详情失败", error);
     ElMessage.error(extractErrorMessage(error, "加载合同详情失败"));
@@ -317,6 +329,25 @@ const loadAttachments = async (contractId: string) => {
   }
 };
 
+const loadApprovalRecords = async (contractId: string) => {
+  try {
+    const response = await getContractApprovalRecords(contractId);
+    const records = response.records || response.data?.records || [];
+    approvalRecords.value = Array.isArray(records)
+      ? records.map((item: ContractApprovalRecord) => ({
+          id: item.id || "",
+          approver: String(item.approver || "系统"),
+          status: String(item.status || "pending").toLowerCase(),
+          comment: String(item.comment || ""),
+          createdAt: String(item.createdAt || ""),
+        }))
+      : [];
+  } catch (error) {
+    console.error("加载审批记录失败", error);
+    approvalRecords.value = [];
+  }
+};
+
 const handleDownload = async (file: Attachment) => {
   if (!contractDetail.value?.id) {
     return;
@@ -337,6 +368,24 @@ const handleDownload = async (file: Attachment) => {
   } catch (error) {
     console.error("下载附件失败", error);
     ElMessage.error(extractErrorMessage(error, "下载附件失败"));
+  }
+};
+
+const handleSubmitApproval = async () => {
+  if (!contractDetail.value?.id || submittingApproval.value) {
+    return;
+  }
+  submittingApproval.value = true;
+  try {
+    await submitForApproval(String(contractDetail.value.id));
+    ElMessage.success("提交审批成功");
+    await loadContractDetail();
+    emit("submitted");
+  } catch (error) {
+    console.error("提交审批失败", error);
+    ElMessage.error(extractErrorMessage(error, "提交审批失败"));
+  } finally {
+    submittingApproval.value = false;
   }
 };
 
@@ -395,6 +444,12 @@ const getApprovalText = (status: string) => {
   }
 
   .no-attachments {
+    color: #999;
+    text-align: center;
+    padding: 20px;
+  }
+
+  .no-approval-records {
     color: #999;
     text-align: center;
     padding: 20px;

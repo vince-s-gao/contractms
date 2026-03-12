@@ -121,9 +121,29 @@ export interface ApprovalTaskItem {
   contractType?: string;
   amount?: number;
   approvalStatus?: string;
+  status?: string;
   applicantName?: string;
   createdAt?: string;
   description?: string;
+}
+
+export interface ApprovalRecordItem {
+  id: string | number;
+  contractId?: string | number;
+  contractNo?: string;
+  contractName?: string;
+  approver?: string;
+  status?: string;
+  comment?: string;
+  approvalTime?: string;
+}
+
+export interface ContractApprovalRecord {
+  id: string | number;
+  approver?: string;
+  status?: string;
+  comment?: string;
+  createdAt?: string;
 }
 
 // 获取合同列表
@@ -289,6 +309,18 @@ export const getApprovalTasks = (params: ApprovalQueryParams) => {
   });
 };
 
+export const getApprovalRecords = (params?: {
+  status?: string;
+  page?: number;
+  size?: number;
+}) => {
+  return request({
+    url: "/contracts/approval-records",
+    method: "get",
+    params,
+  });
+};
+
 export const createContractType = (data: { code: string; name: string }) => {
   return request({
     url: "/contracts/types",
@@ -360,5 +392,12 @@ export const deleteContractAttachment = (
   return request({
     url: `/contracts/${contractId}/attachments/${attachmentId}`,
     method: "delete",
+  });
+};
+
+export const getContractApprovalRecords = (contractId: string | number) => {
+  return request({
+    url: `/contracts/${contractId}/approval-records`,
+    method: "get",
   });
 };

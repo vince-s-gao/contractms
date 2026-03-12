@@ -35,6 +35,25 @@
       </el-row>
     </div>
 
+    <div class="history-area">
+      <el-card header="审批记录">
+        <el-table :data="approvalRecords" stripe>
+          <el-table-column prop="approvalTime" label="时间" width="180" />
+          <el-table-column prop="contractNo" label="合同编号" width="160" />
+          <el-table-column prop="contractName" label="合同名称" min-width="240" />
+          <el-table-column prop="approver" label="审批人" width="120" />
+          <el-table-column label="审批结果" width="100">
+            <template #default="{ row }">
+              <el-tag :type="getStatusType(row.status)">
+                {{ getStatusText(row.status) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="comment" label="审批意见" min-width="220" show-overflow-tooltip />
+        </el-table>
+      </el-card>
+    </div>
+
     <!-- 审批任务列表 -->
     <div class="approval-list">
       <el-card
@@ -97,7 +116,7 @@
           <el-button
             v-if="task.status !== 'pending'"
             type="info"
-            @click="handleViewApprovalDetail"
+            @click="handleViewApprovalDetail(task)"
           >
             查看审批详情
           </el-button>
@@ -123,6 +142,49 @@
       v-model="contractDialogVisible"
       :contract-id="currentContractId"
     />
+
+    <el-dialog
+      v-model="approvalDetailDialogVisible"
+      title="审批详情"
+      width="760px"
+    >
+      <div v-loading="approvalDetailLoading">
+        <el-descriptions :column="2" border>
+          <el-descriptions-item label="合同编号">
+            {{ approvalDetailTask?.contractNumber || "-" }}
+          </el-descriptions-item>
+          <el-descriptions-item label="当前状态">
+            <el-tag :type="getStatusType(approvalDetailTask?.status || '')">
+              {{ getStatusText(approvalDetailTask?.status || "") }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="合同名称">
+            {{ approvalDetailTask?.contractName || "-" }}
+          </el-descriptions-item>
+          <el-descriptions-item label="合同类型">
+            {{ approvalDetailTask?.contractType || "-" }}
+          </el-descriptions-item>
+        </el-descriptions>
+
+        <div class="approval-detail-timeline">
+          <el-timeline v-if="approvalDetailRecords.length > 0">
+            <el-timeline-item
+              v-for="record in approvalDetailRecords"
+              :key="record.id"
+              :timestamp="record.createdAt"
+              :type="getStatusType(record.status)"
+            >
+              <p>{{ record.approver }} - {{ getStatusText(record.status) }}</p>
+              <p v-if="record.comment">审批意见：{{ record.comment }}</p>
+            </el-timeline-item>
+          </el-timeline>
+          <el-empty v-else description="暂无审批记录" />
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="approvalDetailDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -131,7 +193,14 @@ import { ref, reactive, onMounted } from "vue";
 import { ElMessage } from "element-plus";
 import ApprovalDialog from "./components/ApprovalDialog.vue";
 import ContractDetailDialog from "../contracts/components/ContractDetailDialog.vue";
-import { getApprovalTasks, type ApprovalTaskItem } from "@/api/contract";
+import {
+  getApprovalRecords,
+  getApprovalTasks,
+  getContractApprovalRecords,
+  type ApprovalRecordItem,
+  type ApprovalTaskItem,
+  type ContractApprovalRecord,
+} from "@/api/contract";
 import { extractErrorMessage } from "@/utils/error";
 
 interface ApprovalTask {
@@ -153,10 +222,22 @@ interface FilterParams {
   status: string;
 }
 
+interface ApprovalRecordView {
+  id: string;
+  contractId: string;
+  contractNo: string;
+  contractName: string;
+  approver: string;
+  status: string;
+  comment: string;
+  approvalTime: string;
+}
+
 const loading = ref(false);
 const approvalTasks = ref<ApprovalTask[]>([]);
+const approvalRecords = ref<ApprovalRecordView[]>([]);
 const filterParams = reactive<FilterParams>({
-  type: "pending",
+  type: "all",
   status: "",
 });
 
@@ -167,39 +248,14 @@ const currentTask = ref<ApprovalTask | null>(null);
 const currentAction = ref("");
 const currentContractId = ref("");
 
-// 模拟数据
-const mockApprovalTasks: ApprovalTask[] = [
-  {
-    id: "1",
-    contractId: "1",
-    contractNumber: "HT20230001",
-    contractName: "软件开发服务合同",
-    contractType: "技术服务",
-    amount: 500000,
-    status: "pending",
-    applicant: "张三",
-    applyTime: "2023-01-01 10:00:00",
-    createdAt: "2023-01-01 10:00:00",
-    description:
-      "为XX项目提供软件开发服务，包含需求分析、设计、开发、测试等全流程服务。",
-  },
-  {
-    id: "2",
-    contractId: "2",
-    contractNumber: "HT20230002",
-    contractName: "设备采购合同",
-    contractType: "采购",
-    amount: 200000,
-    status: "approved",
-    applicant: "李四",
-    applyTime: "2023-02-01 14:30:00",
-    createdAt: "2023-02-01 14:30:00",
-    description: "采购服务器设备，用于公司业务系统部署。",
-  },
-];
+const approvalDetailDialogVisible = ref(false);
+const approvalDetailLoading = ref(false);
+const approvalDetailTask = ref<ApprovalTask | null>(null);
+const approvalDetailRecords = ref<ContractApprovalRecord[]>([]);
 
 onMounted(() => {
   loadApprovalTasks();
+  loadApprovalRecords();
 });
 
 const loadApprovalTasks = async () => {
@@ -228,7 +284,7 @@ const loadApprovalTasks = async () => {
       contractName: item.contractName || "",
       contractType: item.contractType || "",
       amount: Number(item.amount || 0),
-      status: item.approvalStatus?.toLowerCase() || "pending",
+      status: String(item.status || item.approvalStatus || "pending").toLowerCase(),
       applicant: item.applicantName || "未知申请人",
       applyTime: item.createdAt || "",
       createdAt: item.createdAt || "",
@@ -237,22 +293,7 @@ const loadApprovalTasks = async () => {
   } catch (error) {
     console.error("加载审批任务失败:", error);
     ElMessage.error(extractErrorMessage(error, "加载审批任务失败"));
-    // 降级使用模拟数据
-    let filteredTasks = mockApprovalTasks;
-
-    if (filterParams.type === "pending") {
-      filteredTasks = filteredTasks.filter((task) => task.status === "pending");
-    } else if (filterParams.type === "processed") {
-      filteredTasks = filteredTasks.filter((task) => task.status !== "pending");
-    }
-
-    if (filterParams.status) {
-      filteredTasks = filteredTasks.filter(
-        (task) => task.status === filterParams.status,
-      );
-    }
-
-    approvalTasks.value = filteredTasks;
+    approvalTasks.value = [];
   } finally {
     loading.value = false;
   }
@@ -260,12 +301,42 @@ const loadApprovalTasks = async () => {
 
 const handleSearch = () => {
   loadApprovalTasks();
+  loadApprovalRecords();
 };
 
 const handleReset = () => {
-  filterParams.type = "pending";
+  filterParams.type = "all";
   filterParams.status = "";
   loadApprovalTasks();
+  loadApprovalRecords();
+};
+
+const loadApprovalRecords = async () => {
+  try {
+    const params: { status?: string; page: number; size: number } = {
+      page: 1,
+      size: 50,
+    };
+    if (filterParams.status) {
+      params.status = filterParams.status.toLowerCase();
+    }
+    const data = await getApprovalRecords(params);
+    const records = (data.records || data.data || []) as ApprovalRecordItem[];
+    approvalRecords.value = records.map((item) => ({
+      id: String(item.id || ""),
+      contractId: String(item.contractId || ""),
+      contractNo: item.contractNo || "",
+      contractName: item.contractName || "",
+      approver: item.approver || "系统",
+      status: String(item.status || "pending").toLowerCase(),
+      comment: item.comment || "",
+      approvalTime: item.approvalTime || "",
+    }));
+  } catch (error) {
+    console.error("加载审批记录失败:", error);
+    ElMessage.error(extractErrorMessage(error, "加载审批记录失败"));
+    approvalRecords.value = [];
+  }
 };
 
 const handleViewContract = (task: ApprovalTask) => {
@@ -285,13 +356,46 @@ const handleReject = (task: ApprovalTask) => {
   approvalDialogVisible.value = true;
 };
 
-const handleViewApprovalDetail = () => {
-  ElMessage.info("查看审批详情功能开发中");
+const handleViewApprovalDetail = async (task: ApprovalTask) => {
+  approvalDetailTask.value = task;
+  approvalDetailDialogVisible.value = true;
+  approvalDetailLoading.value = true;
+  try {
+    const data = await getContractApprovalRecords(task.contractId);
+    const records = (data.records || data.data?.records || []) as ContractApprovalRecord[];
+    approvalDetailRecords.value = records.map((item) => ({
+      id: item.id,
+      approver: item.approver || "系统",
+      status: String(item.status || "pending").toLowerCase(),
+      comment: item.comment || "",
+      createdAt: item.createdAt || "",
+    }));
+  } catch (error) {
+    console.error("加载审批详情失败:", error);
+    ElMessage.error(extractErrorMessage(error, "加载审批详情失败"));
+    approvalDetailRecords.value = [];
+  } finally {
+    approvalDetailLoading.value = false;
+  }
 };
 
-const handleApprovalSuccess = () => {
+const handleApprovalSuccess = (payload: { contractId: string; approved: boolean }) => {
   approvalDialogVisible.value = false;
+  const nextStatus = payload.approved ? "approved" : "rejected";
+  if (filterParams.type === "pending") {
+    approvalTasks.value = approvalTasks.value.filter(
+      (task) => task.contractId !== payload.contractId && task.id !== payload.contractId,
+    );
+  } else {
+    approvalTasks.value = approvalTasks.value.map((task) => {
+      if (task.contractId === payload.contractId || task.id === payload.contractId) {
+        return { ...task, status: nextStatus };
+      }
+      return task;
+    });
+  }
   loadApprovalTasks();
+  loadApprovalRecords();
 };
 
 const formatAmount = (amount: number) => {
@@ -334,6 +438,14 @@ const getStatusText = (status: string) => {
   .el-col {
     margin-bottom: 10px;
   }
+}
+
+.history-area {
+  margin-bottom: 20px;
+}
+
+.approval-detail-timeline {
+  margin-top: 16px;
 }
 
 .approval-list {

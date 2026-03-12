@@ -51,17 +51,21 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        List<String> originPatterns = new ArrayList<>();
+        List<String> origins = new ArrayList<>();
         for (String item : allowedOrigins.split(",")) {
             if (item != null && !item.isBlank()) {
-                originPatterns.add(item.trim());
+                String value = item.trim();
+                if ("*".equals(value) || value.contains("*")) {
+                    throw new IllegalStateException("APP_SECURITY_ALLOWED_ORIGINS 禁止使用通配符: " + value);
+                }
+                origins.add(value);
             }
         }
-        if (originPatterns.isEmpty()) {
-            originPatterns = Arrays.asList("http://127.0.0.1:5252", "http://localhost:5252");
+        if (origins.isEmpty()) {
+            origins = Arrays.asList("http://127.0.0.1:5252", "http://localhost:5252");
         }
 
-        configuration.setAllowedOriginPatterns(originPatterns);
+        configuration.setAllowedOrigins(origins);
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList(
                 "Authorization", "Content-Type", "X-Requested-With", "X-User-Id", "X-Silent-Error-Message"

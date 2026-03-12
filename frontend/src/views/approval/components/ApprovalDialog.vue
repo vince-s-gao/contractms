@@ -42,6 +42,8 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch } from "vue";
 import { ElMessage, type FormInstance, type FormRules } from "element-plus";
+import { approveContract } from "@/api/contract";
+import { extractErrorMessage } from "@/utils/error";
 
 interface ApprovalFormData {
   comment: string;
@@ -49,6 +51,7 @@ interface ApprovalFormData {
 
 interface ApprovalDialogTask {
   id: string;
+  contractId?: string;
   contractName: string;
 }
 
@@ -60,7 +63,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   "update:modelValue": [value: boolean];
-  success: [];
+  success: [payload: { contractId: string; approved: boolean }];
 }>();
 
 const visible = ref(false);
@@ -124,17 +127,31 @@ const handleSubmit = async () => {
   loading.value = true;
 
   try {
-    // 模拟API调用
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const contractId = props.task?.contractId || props.task?.id;
+    if (!contractId) {
+      ElMessage.error("审批目标不存在");
+      return;
+    }
+    await approveContract(
+      String(contractId),
+      props.action === "approve",
+      formData.comment.trim() || undefined,
+    );
 
     ElMessage.success(
       props.action === "approve" ? "审批通过成功" : "审批拒绝成功",
     );
-    emit("success");
+    emit("success", {
+      contractId: String(contractId),
+      approved: props.action === "approve",
+    });
     handleClose();
   } catch (error) {
     ElMessage.error(
-      props.action === "approve" ? "审批通过失败" : "审批拒绝失败",
+      extractErrorMessage(
+        error,
+        props.action === "approve" ? "审批通过失败" : "审批拒绝失败",
+      ),
     );
   } finally {
     loading.value = false;

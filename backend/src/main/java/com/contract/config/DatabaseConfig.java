@@ -47,6 +47,7 @@ public class DatabaseConfig {
      */
     @Bean
     public DataSource dataSource() {
+        validatePasswordBeforeConnect();
         HikariDataSource dataSource = new HikariDataSource();
         dataSource.setJdbcUrl(url);
         dataSource.setUsername(username);
@@ -64,6 +65,40 @@ public class DatabaseConfig {
         dataSource.setLeakDetectionThreshold(60000);
         
         return dataSource;
+    }
+
+    private void validatePasswordBeforeConnect() {
+        String effectivePassword = trimToNull(password);
+        String dbPassword = trimToNull(System.getenv("DB_PASSWORD"));
+        String springDatasourcePassword = trimToNull(System.getenv("SPRING_DATASOURCE_PASSWORD"));
+
+        if (isUnresolvedPlaceholder(effectivePassword)
+                || isUnresolvedPlaceholder(dbPassword)
+                || isUnresolvedPlaceholder(springDatasourcePassword)) {
+            throw new IllegalStateException("数据库密码配置未解析，请检查 DB_PASSWORD/SPRING_DATASOURCE_PASSWORD");
+        }
+        if (effectivePassword == null) {
+            throw new IllegalStateException("数据库密码未配置，请设置 DB_PASSWORD 或 SPRING_DATASOURCE_PASSWORD");
+        }
+        if (dbPassword == null && springDatasourcePassword == null) {
+            throw new IllegalStateException("数据库密码环境变量未配置，请设置 DB_PASSWORD 或 SPRING_DATASOURCE_PASSWORD");
+        }
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static boolean isUnresolvedPlaceholder(String value) {
+        if (value == null) {
+            return false;
+        }
+        String trimmed = value.trim();
+        return trimmed.startsWith("${") && trimmed.endsWith("}");
     }
 
     /**

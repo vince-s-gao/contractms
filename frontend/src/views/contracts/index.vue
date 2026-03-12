@@ -123,7 +123,7 @@
               >查看</el-button
             >
             <el-button
-              v-if="row.status === 'draft'"
+              v-if="row.status === 'draft' || isAdminUser"
               link
               type="warning"
               @click="handleEdit(row)"
@@ -159,6 +159,7 @@
       v-model="detailDialogVisible"
       :contract-id="currentContractId"
       @close="handleDetailClose"
+      @submitted="handleApprovalSubmitted"
     />
 
     <!-- 合同编辑对话框 -->
@@ -261,6 +262,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed } from "vue";
 import { ElMessage, ElMessageBox, type UploadFile, type UploadRawFile } from "element-plus";
+import { useUserStore } from "@/stores/user";
 import {
   deleteContract,
   createContractType,
@@ -274,25 +276,11 @@ import {
   type ContractQueryParams,
   type ContractTypeItem,
 } from "@/api/contract";
+import { DEFAULT_CONTRACT_TYPE_LIST } from "@/constants/contract";
+import type { ContractListItem } from "@/types/contract";
 import ContractDetailDialog from "./components/ContractDetailDialog.vue";
 import ContractFormDialog from "./components/ContractFormDialog.vue";
 import { extractErrorMessage } from "@/utils/error";
-
-interface Contract {
-  id: string;
-  contractNumber: string;
-  signingYear?: number;
-  contractName: string;
-  customerName?: string;
-  companySignatory?: string;
-  contractType: string;
-  amount: number;
-  status: string;
-  startDate: string;
-  endDate: string;
-  createdBy: string;
-  createdAt: string;
-}
 
 interface SearchParams {
   keyword: string;
@@ -323,7 +311,7 @@ interface ContractTypeForm {
 }
 
 const loading = ref(false);
-const contractList = ref<Contract[]>([]);
+const contractList = ref<ContractListItem[]>([]);
 const searchParams = reactive<SearchParams>({
   keyword: "",
   customerName: "",
@@ -345,7 +333,7 @@ const sortState = reactive<SortState>({
 const detailDialogVisible = ref(false);
 const formDialogVisible = ref(false);
 const currentContractId = ref("");
-const currentContract = ref<Contract | null>(null);
+const currentContract = ref<ContractListItem | null>(null);
 const exportDialogVisible = ref(false);
 const exportLoading = ref(false);
 const importDialogVisible = ref(false);
@@ -355,13 +343,7 @@ const importFileList = ref<UploadFile[]>([]);
 const importRawFile = ref<UploadRawFile | null>(null);
 const typeManageDialogVisible = ref(false);
 const typeManageLoading = ref(false);
-const defaultContractTypeList: ContractTypeItem[] = [
-  { code: "SALES", name: "销售合同" },
-  { code: "PURCHASE", name: "采购合同" },
-  { code: "SERVICE", name: "服务合同" },
-  { code: "OTHER", name: "其他" },
-];
-const contractTypeList = ref<ContractTypeItem[]>([...defaultContractTypeList]);
+const contractTypeList = ref<ContractTypeItem[]>([...DEFAULT_CONTRACT_TYPE_LIST]);
 const editingTypeCode = ref("");
 const typeForm = reactive<ContractTypeForm>({
   code: "",
@@ -373,6 +355,11 @@ const contractTypeOptions = computed(() =>
     value: item.code,
   })),
 );
+const userStore = useUserStore();
+const isAdminUser = computed(() => {
+  const role = String(userStore.userInfo?.role || "").toUpperCase();
+  return role === "ADMIN" || role === "ROLE_ADMIN" || role === "ROLE_ROLE_ADMIN";
+});
 const exportFieldOptions: ExportFieldOption[] = [
   { label: "合同编号", value: "contractNo" },
   { label: "签约年份", value: "signingYear" },
@@ -403,7 +390,7 @@ const loadContractTypeList = async () => {
   } catch (error) {
     console.error("加载合同类型失败:", error);
     if (!contractTypeList.value.length) {
-      contractTypeList.value = [...defaultContractTypeList];
+      contractTypeList.value = [...DEFAULT_CONTRACT_TYPE_LIST];
     }
     return false;
   }
@@ -598,17 +585,17 @@ const handleImportConfirm = async () => {
   }
 };
 
-const handleView = (row: Contract) => {
+const handleView = (row: ContractListItem) => {
   currentContractId.value = row.id;
   detailDialogVisible.value = true;
 };
 
-const handleEdit = (row: Contract) => {
+const handleEdit = (row: ContractListItem) => {
   currentContract.value = row;
   formDialogVisible.value = true;
 };
 
-const handleDelete = async (row: Contract) => {
+const handleDelete = async (row: ContractListItem) => {
   try {
     await ElMessageBox.confirm(
       `确定删除合同"${row.contractName}"吗？`,
@@ -733,6 +720,10 @@ const getContractTypeLabel = (code: string) => {
 
 const handleDetailClose = () => {
   currentContractId.value = "";
+};
+
+const handleApprovalSubmitted = () => {
+  loadContractList();
 };
 
 const handleFormSuccess = () => {
