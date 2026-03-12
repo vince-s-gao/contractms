@@ -41,6 +41,10 @@ public class ContractManagementApplication implements CommandLineRunner {
         if (!bootstrapDemoData) {
             return;
         }
+        if (isBlank(adminPassword) || isBlank(userPassword)) {
+            throw new IllegalStateException(
+                    "APP_BOOTSTRAP_ADMIN_PASSWORD and APP_BOOTSTRAP_USER_PASSWORD are required when APP_BOOTSTRAP_DEMO_DATA=true");
+        }
 
         // 初始化管理员角色
         Role adminRole = roleRepository.findByName("ADMIN")
@@ -89,5 +93,9 @@ public class ContractManagementApplication implements CommandLineRunner {
             testUser.setEnabled(true);
             userRepository.save(testUser);
         }
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }
