@@ -113,7 +113,7 @@ public class ContractController {
     }
 
     @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
     public ResponseEntity<?> importContracts(@RequestPart("file") MultipartFile file,
                                              @RequestParam(defaultValue = "false") boolean overwrite,
                                              Authentication authentication) {
@@ -246,7 +246,7 @@ public class ContractController {
     }
 
     @PostMapping(value = "/{id}/attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
     public ResponseEntity<?> uploadAttachments(@PathVariable Long id,
                                                @RequestPart("files") MultipartFile[] files,
                                                @RequestParam(required = false) String description,
@@ -423,7 +423,7 @@ public class ContractController {
     }
 
     @DeleteMapping("/{id}/attachments/{attachmentId}")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
     public ResponseEntity<?> deleteAttachment(@PathVariable Long id, @PathVariable Long attachmentId, Authentication authentication) {
         ensureContractAttachmentTable();
         List<Map<String, Object>> rows;
@@ -556,7 +556,7 @@ public class ContractController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
     public ResponseEntity<?> create(@RequestBody Map<String, Object> request, Authentication authentication) {
         String contractNo = asString(request.get("contractNo"));
         String contractName = asString(request.get("contractName"));
@@ -611,7 +611,7 @@ public class ContractController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
     public ResponseEntity<?> update(@PathVariable Long id, @RequestBody Map<String, Object> request, Authentication authentication) {
         List<Map<String, Object>> existed = jdbcTemplate.queryForList(
                 "SELECT id, contract_no, status FROM contracts WHERE id = ?", id);
@@ -686,7 +686,7 @@ public class ContractController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:delete')")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:delete')")
     public ResponseEntity<?> delete(@PathVariable Long id, Authentication authentication) {
         int affected = jdbcTemplate.update("DELETE FROM contracts WHERE id = ?", id);
         if (affected == 0) {
@@ -700,7 +700,7 @@ public class ContractController {
     }
 
     @PostMapping("/{id}/submit")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:approval')")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:approval')")
     public ResponseEntity<?> submit(@PathVariable Long id, Authentication authentication) {
         int affected = jdbcTemplate.update(
                 "UPDATE contracts SET status = 'PENDING', updated_time = NOW() WHERE id = ?", id);
@@ -722,7 +722,7 @@ public class ContractController {
     }
 
     @PostMapping("/{id}/approve")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_APPROVAL_MANAGER') or hasAuthority('contract:approval')")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_APPROVAL_MANAGER') or hasAuthority('contract:approval')")
     public ResponseEntity<?> approve(@PathVariable Long id,
                                      @RequestParam boolean approved,
                                      @RequestParam(required = false) String comment,
@@ -805,7 +805,7 @@ public class ContractController {
     }
 
     @PutMapping("/{id}/status")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_APPROVAL_MANAGER') or hasAuthority('contract:approval')")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_APPROVAL_MANAGER') or hasAuthority('contract:approval')")
     public ResponseEntity<?> updateStatus(@PathVariable Long id, @RequestParam String status, Authentication authentication) {
         String mapped = toContractDbStatus(status);
         int affected = jdbcTemplate.update(
@@ -1123,7 +1123,7 @@ public class ContractController {
     }
 
     @PostMapping("/types")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
     public ResponseEntity<?> createContractType(@RequestBody Map<String, Object> request, Authentication authentication) {
         ensureContractTypeMetaTable();
         String code = normalizeContractTypeCode(asString(request.get("code")));
@@ -1151,7 +1151,7 @@ public class ContractController {
     }
 
     @PutMapping("/types/{code}")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
     public ResponseEntity<?> updateContractType(@PathVariable String code,
                                                 @RequestBody Map<String, Object> request,
                                                 Authentication authentication) {
@@ -1199,7 +1199,7 @@ public class ContractController {
     }
 
     @DeleteMapping("/types/{code}")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
     public ResponseEntity<?> deleteContractType(@PathVariable String code, Authentication authentication) {
         ensureContractTypeMetaTable();
         String typeCode = normalizeContractTypeCode(code);
@@ -1308,7 +1308,8 @@ public class ContractController {
             return false;
         }
         return authentication.getAuthorities().stream().anyMatch(
-                authority -> "ROLE_ADMIN".equalsIgnoreCase(authority.getAuthority())
+                authority -> "ROLE_SUPER_ADMIN".equalsIgnoreCase(authority.getAuthority())
+                        || "ROLE_ADMIN".equalsIgnoreCase(authority.getAuthority())
                         || "ROLE_ROLE_ADMIN".equalsIgnoreCase(authority.getAuthority()));
     }
 

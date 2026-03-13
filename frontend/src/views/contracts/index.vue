@@ -358,7 +358,11 @@ const contractTypeOptions = computed(() =>
 const userStore = useUserStore();
 const isAdminUser = computed(() => {
   const role = String(userStore.userInfo?.role || "").toUpperCase();
-  return role === "ADMIN" || role === "ROLE_ADMIN" || role === "ROLE_ROLE_ADMIN";
+  return role === "SUPER_ADMIN"
+    || role === "ROLE_SUPER_ADMIN"
+    || role === "ADMIN"
+    || role === "ROLE_ADMIN"
+    || role === "ROLE_ROLE_ADMIN";
 });
 const exportFieldOptions: ExportFieldOption[] = [
   { label: "合同编号", value: "contractNo" },

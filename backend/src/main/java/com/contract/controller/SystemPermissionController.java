@@ -12,7 +12,7 @@ import java.util.*;
 
 @RestController
 @RequestMapping("/api/system")
-@PreAuthorize("hasAnyAuthority('ROLE_ADMIN','ROLE_ROLE_ADMIN')")
+@PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN') or hasAuthority('system:permission')")
 public class SystemPermissionController {
 
     @Autowired
@@ -353,13 +353,16 @@ public class SystemPermissionController {
             return false;
         }
         return authentication.getAuthorities().stream().anyMatch(
-                authority -> "ROLE_ADMIN".equalsIgnoreCase(authority.getAuthority())
-                        || "ROLE_ROLE_ADMIN".equalsIgnoreCase(authority.getAuthority()));
+                authority -> "ROLE_SUPER_ADMIN".equalsIgnoreCase(authority.getAuthority())
+                        || "ROLE_ADMIN".equalsIgnoreCase(authority.getAuthority())
+                        || "ROLE_ROLE_ADMIN".equalsIgnoreCase(authority.getAuthority())
+                        || "system:permission".equalsIgnoreCase(authority.getAuthority()));
     }
 
     private static String normalizedBuiltinRoleName(String roleCode) {
         String code = isBlank(roleCode) ? "" : roleCode.toUpperCase(Locale.ROOT);
         return switch (code) {
+            case "SUPER_ADMIN", "ROLE_SUPER_ADMIN" -> "超级管理员";
             case "ADMIN", "ROLE_ADMIN" -> "系统管理员";
             case "CONTRACT_MANAGER" -> "合同管理员";
             case "APPROVAL_MANAGER" -> "审批管理员";
@@ -371,6 +374,7 @@ public class SystemPermissionController {
     private static String normalizedBuiltinRoleDesc(String roleCode) {
         String code = isBlank(roleCode) ? "" : roleCode.toUpperCase(Locale.ROOT);
         return switch (code) {
+            case "SUPER_ADMIN", "ROLE_SUPER_ADMIN" -> "拥有平台全部管理权限";
             case "ADMIN", "ROLE_ADMIN" -> "拥有系统所有权限";
             case "CONTRACT_MANAGER" -> "合同管理相关权限";
             case "APPROVAL_MANAGER" -> "合同审批相关权限";
