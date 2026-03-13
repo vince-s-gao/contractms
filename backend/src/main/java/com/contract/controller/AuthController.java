@@ -61,17 +61,18 @@ public class AuthController {
                     userDetails.getAuthorities()
             );
             SecurityContextHolder.getContext().setAuthentication(authentication);
-            
-            String token = generateToken(loginRequest.getUsername());
-            
+
+            String normalizedUsername = userDetails.getUsername();
+            String token = generateToken(normalizedUsername);
+
             Map<String, Object> response = new HashMap<>();
-            User user = userService.getUserByUsername(loginRequest.getUsername());
+            User user = userService.getUserByUsername(normalizedUsername);
             String roleCode = "USER";
             if (user.getRole() != null && user.getRole().getRoleCode() != null) {
                 roleCode = user.getRole().getRoleCode();
             }
             response.put("token", token);
-            response.put("username", loginRequest.getUsername());
+            response.put("username", normalizedUsername);
             response.put("user", Map.of(
                     "id", user.getId(),
                     "username", user.getUsername(),
@@ -79,7 +80,7 @@ public class AuthController {
             ));
             response.put("expiresIn", jwtExpiration);
             response.put("message", "登录成功");
-            operationLogService.log(authentication, "LOGIN", "AUTH", "用户登录成功：" + loginRequest.getUsername(), "SUCCESS", null);
+            operationLogService.log(authentication, "LOGIN", "AUTH", "用户登录成功：" + normalizedUsername, "SUCCESS", null);
             
             return ResponseEntity.ok(response);
         } catch (Exception e) {

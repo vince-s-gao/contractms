@@ -62,7 +62,7 @@ public class ContractQueryService {
                            END,
                            2
                        ) AS amountWithoutTax,
-                       'Vince Gao' AS createdBy,
+                       COALESCE(NULLIF(u.real_name, ''), NULLIF(u.username, ''), CONCAT('用户#', c.created_by)) AS createdBy,
                        DATE_FORMAT(CONVERT_TZ(c.created_time, '+00:00', '+08:00'), '%Y-%m-%d %H:%i:%s') AS createdAt,
                        DATE_FORMAT(c.start_date, '%Y-%m-%d') AS startDate,
                        DATE_FORMAT(c.end_date, '%Y-%m-%d') AS endDate,
@@ -76,6 +76,7 @@ public class ContractQueryService {
                            ELSE 'draft'
                        END AS status
                 FROM contracts c
+                LEFT JOIN users u ON u.id = c.created_by
                 WHERE 1=1
                 """);
         List<Object> params = new ArrayList<>();
@@ -240,7 +241,9 @@ public class ContractQueryService {
         }
         return switch (status.toLowerCase(Locale.ROOT)) {
             case "approving", "pending" -> "PENDING";
-            case "active", "approved", "executing", "completed" -> "APPROVED";
+            case "active", "approved" -> "APPROVED";
+            case "executing" -> "EXECUTING";
+            case "completed" -> "COMPLETED";
             case "terminated", "rejected" -> "TERMINATED";
             default -> "DRAFT";
         };

@@ -513,7 +513,7 @@ public class ContractController {
                            END,
                            2
                        ) AS amountWithoutTax,
-                       'Vince Gao' AS createdBy,
+                       COALESCE(NULLIF(u.real_name, ''), NULLIF(u.username, ''), CONCAT('用户#', c.created_by)) AS createdBy,
                        DATE_FORMAT(CONVERT_TZ(c.created_time, '+00:00', '+08:00'), '%Y-%m-%d %H:%i:%s') AS createdAt,
                        DATE_FORMAT(c.start_date, '%Y-%m-%d') AS startDate,
                        DATE_FORMAT(c.end_date, '%Y-%m-%d') AS endDate,
@@ -532,13 +532,16 @@ public class ContractController {
                            ELSE 'draft'
                        END AS status
                 FROM contracts c
+                LEFT JOIN users u ON u.id = c.created_by
                 WHERE c.id = ?
                 """;
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, id);
         if (rows.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
-        return ResponseEntity.ok(rows.get(0));
+        Map<String, Object> result = new LinkedHashMap<>(rows.get(0));
+        result.put("participants", queryParticipantRecords(id));
+        return ResponseEntity.ok(result);
     }
 
     @GetMapping("/no/{contractNo}")
@@ -601,6 +604,7 @@ public class ContractController {
                     "创建合同失败：创建后未找到合同ID contractNo=" + contractNo, "FAILED", "创建合同失败");
             return ResponseEntity.badRequest().body(Map.of("message", "创建合同失败"));
         }
+        saveParticipants(createdId, request.get("participants"), createdBy);
         operationLogService.log(authentication, "CREATE", "CONTRACT",
                 "创建合同成功 contractNo=" + contractNo + ", id=" + createdId, "SUCCESS", null);
         return getById(createdId);
@@ -673,6 +677,7 @@ public class ContractController {
                 resetStatus,
                 asLong(request.get("updatedBy"), null),
                 id);
+        saveParticipants(id, request.get("participants"), resolveCurrentUserId(authentication));
         operationLogService.log(authentication, "UPDATE", "CONTRACT",
                 "更新合同成功 id=" + id + ", contractNo=" + finalContractNo
                         + (resetStatus == null ? "" : ", statusResetTo=DRAFT"),
@@ -839,7 +844,7 @@ public class ContractController {
                        c.party_b AS companySignatory,
                        c.contract_type AS contractType,
                        c.amount AS amount,
-                       'Vince Gao' AS createdBy,
+                       COALESCE(NULLIF(u.real_name, ''), NULLIF(u.username, ''), CONCAT('用户#', c.created_by)) AS createdBy,
                        DATE_FORMAT(CONVERT_TZ(c.created_time, '+00:00', '+08:00'), '%Y-%m-%d %H:%i:%s') AS createdAt,
                        DATE_FORMAT(CONVERT_TZ(c.created_time, '+00:00', '+08:00'), '%Y-%m-%d %H:%i:%s') AS applyTime,
                        c.description AS description,
@@ -850,6 +855,7 @@ public class ContractController {
                            ELSE 'approved'
                        END AS status
                 FROM contracts c
+                LEFT JOIN users u ON u.id = c.created_by
                 WHERE 1=1
                 """);
 
@@ -1312,7 +1318,9 @@ public class ContractController {
         }
         return switch (status.toLowerCase(Locale.ROOT)) {
             case "approving", "pending" -> "PENDING";
-            case "active", "approved", "executing", "completed" -> "APPROVED";
+            case "active", "approved" -> "APPROVED";
+            case "executing" -> "EXECUTING";
+            case "completed" -> "COMPLETED";
             case "terminated", "rejected" -> "TERMINATED";
             default -> "DRAFT";
         };
@@ -1348,6 +1356,85 @@ public class ContractController {
             return upper;
         }
         return "OTHER";
+    }
+
+    private void ensureContractParticipantTable() {
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS contract_participant_entries (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    contract_id BIGINT NOT NULL,
+                    participant_name VARCHAR(100) NOT NULL,
+                    participant_role VARCHAR(100),
+                    department VARCHAR(100),
+                    phone VARCHAR(50),
+                    sort_order INT DEFAULT 0,
+                    created_by BIGINT,
+                    created_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX idx_contract_id (contract_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """);
+    }
+
+    private void saveParticipants(Long contractId, Object rawParticipants, Long operatorId) {
+        ensureContractParticipantTable();
+        jdbcTemplate.update("DELETE FROM contract_participant_entries WHERE contract_id = ?", contractId);
+        List<Map<String, Object>> participants = asMapList(rawParticipants);
+        int sortOrder = 0;
+        for (Map<String, Object> participant : participants) {
+            String name = nullable(asString(participant.get("name")));
+            String role = nullable(asString(participant.get("role")));
+            String department = nullable(asString(participant.get("department")));
+            String phone = nullable(asString(participant.get("phone")));
+            if (name == null && role == null && department == null && phone == null) {
+                continue;
+            }
+            jdbcTemplate.update("""
+                            INSERT INTO contract_participant_entries (
+                                contract_id, participant_name, participant_role, department, phone, sort_order, created_by
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                            """,
+                    contractId,
+                    defaultIfBlank(name, "未命名参与人员"),
+                    role,
+                    department,
+                    phone,
+                    sortOrder++,
+                    operatorId);
+        }
+    }
+
+    private List<Map<String, Object>> queryParticipantRecords(Long contractId) {
+        ensureContractParticipantTable();
+        return jdbcTemplate.queryForList("""
+                SELECT id,
+                       participant_name AS name,
+                       COALESCE(participant_role, '') AS role,
+                       COALESCE(department, '') AS department,
+                       COALESCE(phone, '') AS phone
+                FROM contract_participant_entries
+                WHERE contract_id = ?
+                ORDER BY sort_order ASC, id ASC
+                """, contractId);
+    }
+
+    private List<Map<String, Object>> asMapList(Object value) {
+        if (!(value instanceof List<?> list)) {
+            return Collections.emptyList();
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Object item : list) {
+            if (item instanceof Map<?, ?> map) {
+                Map<String, Object> normalized = new LinkedHashMap<>();
+                for (Map.Entry<?, ?> entry : map.entrySet()) {
+                    if (entry.getKey() != null) {
+                        normalized.put(entry.getKey().toString(), entry.getValue());
+                    }
+                }
+                result.add(normalized);
+            }
+        }
+        return result;
     }
 
     private void ensureContractAttachmentTable() {
@@ -1783,7 +1870,7 @@ public class ContractController {
                        c.contract_name AS contractName,
                        c.contract_type AS contractType,
                        c.amount AS amount,
-                       'Vince Gao' AS createdBy,
+                       COALESCE(NULLIF(u.real_name, ''), NULLIF(u.username, ''), CONCAT('用户#', c.created_by)) AS createdBy,
                        DATE_FORMAT(CONVERT_TZ(c.created_time, '+00:00', '+08:00'), '%Y-%m-%d %H:%i:%s') AS createdAt,
                        DATE_FORMAT(c.start_date, '%Y-%m-%d') AS startDate,
                        DATE_FORMAT(c.end_date, '%Y-%m-%d') AS endDate,
@@ -1797,6 +1884,7 @@ public class ContractController {
                            ELSE 'draft'
                        END AS status
                 FROM contracts c
+                LEFT JOIN users u ON u.id = c.created_by
                 WHERE 1=1
                 """);
         List<Object> params = new ArrayList<>();

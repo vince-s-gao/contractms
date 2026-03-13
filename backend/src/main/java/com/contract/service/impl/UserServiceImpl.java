@@ -163,7 +163,7 @@ public class UserServiceImpl implements UserService {
     
     @Override
     public User getUserByUsername(String username) {
-        return userRepository.findByUsername(username)
+        return userRepository.findByUsernameIgnoreCase(username)
                 .orElseThrow(() -> new RuntimeException("用户不存在: " + username));
     }
     

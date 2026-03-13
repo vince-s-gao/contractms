@@ -268,6 +268,7 @@ import {
 import {
   createContract,
   deleteContractAttachment,
+  getContractById,
   getContractAttachments,
   updateContract,
   getContractTypes,
@@ -317,6 +318,7 @@ interface ContractFormSourceData {
   endDate?: string;
   content?: string;
   description?: string;
+  participants?: Participant[];
 }
 
 const props = defineProps<{
@@ -407,7 +409,7 @@ watch(
       loadContractTypeOptions();
       resetForm();
       if (props.contractData) {
-        loadContractData();
+        void loadContractData();
       }
     }
   },
@@ -429,21 +431,26 @@ const loadContractTypeOptions = async () => {
   }
 };
 
-const loadContractData = () => {
-  if (!props.contractData) return;
+const applyContractData = (source: ContractFormSourceData) => {
+  const participants = Array.isArray(source.participants)
+    ? source.participants.map((item) => ({
+        name: item.name || "",
+        role: item.role || "",
+        department: item.department || "",
+        phone: item.phone || "",
+      }))
+    : [];
 
   Object.assign(formData, {
-    ...props.contractData,
-    contractNumber: props.contractData.contractNumber || props.contractData.contractNo || "",
+    ...source,
+    contractNumber: source.contractNumber || source.contractNo || "",
     taxRate:
-      props.contractData.taxRate === undefined ||
-      props.contractData.taxRate === null
+      source.taxRate === undefined || source.taxRate === null
         ? 0
-        : Number(props.contractData.taxRate),
-    customerName:
-      props.contractData.customerName || props.contractData.partyA || "",
-    companySignatory:
-      props.contractData.companySignatory || props.contractData.partyB || "",
+        : Number(source.taxRate),
+    customerName: source.customerName || source.partyA || "",
+    companySignatory: source.companySignatory || source.partyB || "",
+    participants,
   });
   if (
     formData.contractType &&
@@ -453,6 +460,25 @@ const loadContractData = () => {
       code: formData.contractType,
       name: formData.contractType,
     });
+  }
+};
+
+const loadContractData = async () => {
+  if (!props.contractData) return;
+
+  applyContractData(props.contractData);
+
+  const contractId = props.contractData.id;
+  if (contractId !== undefined && contractId !== null) {
+    try {
+      const detail = (await getContractById(String(contractId))) as ContractFormSourceData;
+      applyContractData({
+        ...props.contractData,
+        ...detail,
+      });
+    } catch (error) {
+      console.error("加载合同详情失败:", error);
+    }
   }
   loadExistingAttachments();
 };
@@ -576,7 +602,13 @@ const handleSubmit = async () => {
       partyContact: formData.companySignatory || "",
       partyPhone:
         formData.participants.find((p) => p.role === "对方单位")?.phone || "",
-      createdBy: userStore.userInfo?.id || "Vince Gao",
+      createdBy: userStore.userInfo?.id,
+      participants: formData.participants.map((participant) => ({
+        name: participant.name || "",
+        role: participant.role || "",
+        department: participant.department || "",
+        phone: participant.phone || "",
+      })),
     };
 
     let savedData: { id?: string | number; contractId?: string | number } = {};

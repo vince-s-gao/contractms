@@ -206,6 +206,7 @@ interface ContractDetailResponse {
   createdAt?: string;
   content?: string;
   description?: string;
+  participants?: Participant[];
 }
 
 interface AttachmentRecord {
@@ -276,7 +277,15 @@ const loadContractDetail = async () => {
       content: data.content || data.description || "",
     };
 
-    participants.value = [];
+    participants.value = Array.isArray(data.participants)
+      ? data.participants.map((item) => ({
+          id: String(item.id || ""),
+          name: String(item.name || ""),
+          role: String(item.role || ""),
+          department: String(item.department || ""),
+          phone: String(item.phone || ""),
+        }))
+      : [];
     await loadAttachments(contractDetail.value.id);
     await loadApprovalRecords(contractDetail.value.id);
   } catch (error) {

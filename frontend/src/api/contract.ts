@@ -39,6 +39,12 @@ export interface ContractUpsertPayload {
   partyContact?: string;
   partyPhone?: string;
   createdBy?: string | number;
+  participants?: Array<{
+    name?: string;
+    role?: string;
+    department?: string;
+    phone?: string;
+  }>;
 }
 
 export interface ContractQueryParams {
