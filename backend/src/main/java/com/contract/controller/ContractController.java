@@ -26,6 +26,8 @@ import java.nio.file.Paths;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -37,6 +39,14 @@ public class ContractController {
     private static final Pattern ENUM_ITEM_PATTERN = Pattern.compile("'([^']*)'");
     private static final Pattern SIGNING_YEAR_PATTERN = Pattern.compile("20\\d{2}");
     private static final long MAX_ATTACHMENT_SIZE_BYTES = 100L * 1024L * 1024L;
+    private static final List<DateTimeFormatter> FLEXIBLE_DATE_FORMATTERS = List.of(
+            DateTimeFormatter.ISO_LOCAL_DATE,
+            DateTimeFormatter.ofPattern("yyyy/M/d"),
+            DateTimeFormatter.ofPattern("yyyy/M/dd"),
+            DateTimeFormatter.ofPattern("yyyy-M-d"),
+            DateTimeFormatter.ofPattern("yyyy.MM.dd"),
+            DateTimeFormatter.ofPattern("yyyy年M月d日")
+    );
     private static final Set<String> ALLOWED_ATTACHMENT_EXTENSIONS = Set.of(
             "pdf", "doc", "docx", "xls", "xlsx", "jpg", "jpeg", "png"
     );
@@ -90,6 +100,7 @@ public class ContractController {
     }
 
     @GetMapping("/export")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAnyAuthority('contract:write','contract:read')")
     public ResponseEntity<byte[]> exportContracts(@RequestParam(required = false) String fields,
                                                   @RequestParam(required = false) String keyword,
                                                   @RequestParam(required = false) String status,
@@ -1706,11 +1717,17 @@ public class ContractController {
         if (value == null) {
             return null;
         }
-        try {
-            return LocalDate.parse(value.toString());
-        } catch (Exception e) {
+        String raw = value.toString().trim();
+        if (raw.isEmpty()) {
             return null;
         }
+        for (DateTimeFormatter formatter : FLEXIBLE_DATE_FORMATTERS) {
+            try {
+                return LocalDate.parse(raw, formatter);
+            } catch (DateTimeParseException ignored) {
+            }
+        }
+        return null;
     }
 
     private static String asString(Object value) {

@@ -270,6 +270,7 @@ export const exportContracts = (params: ContractExportParams) => {
     method: "get",
     params,
     responseType: "blob",
+    headers: silentErrorHeaders,
   });
 };
 

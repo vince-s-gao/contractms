@@ -32,7 +32,9 @@ public class ContractImportService {
             DateTimeFormatter.ofPattern("yyyy-MM-dd"),
             DateTimeFormatter.ofPattern("yyyy/M/d"),
             DateTimeFormatter.ofPattern("yyyy/M/dd"),
-            DateTimeFormatter.ofPattern("yyyy.MM.dd")
+            DateTimeFormatter.ofPattern("yyyy.MM.dd"),
+            DateTimeFormatter.ofPattern("yyyy-M-d"),
+            DateTimeFormatter.ofPattern("yyyy年M月d日")
     );
 
     static {
@@ -55,6 +57,7 @@ public class ContractImportService {
 
         try (InputStream inputStream = file.getInputStream();
              Workbook workbook = WorkbookFactory.create(inputStream)) {
+            FormulaEvaluator formulaEvaluator = workbook.getCreationHelper().createFormulaEvaluator();
             Sheet sheet = workbook.getNumberOfSheets() > 0 ? workbook.getSheetAt(0) : null;
             if (sheet == null) {
                 throw new IllegalArgumentException("Excel中没有可读取的工作表");
@@ -84,8 +87,8 @@ public class ContractImportService {
                     Cell cell = row.getCell(col, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
                     Object value = switch (field) {
                         case "amount" -> readNumeric(cell);
-                        case "startDate", "endDate" -> readDate(cell);
-                        default -> readString(cell);
+                        case "startDate", "endDate" -> readDate(cell, formulaEvaluator);
+                        default -> readString(cell, formulaEvaluator);
                     };
                     if (value != null) {
                         values.put(field, value);
@@ -110,7 +113,7 @@ public class ContractImportService {
         short maxCell = headerRow.getLastCellNum();
         for (int i = 0; i < maxCell; i++) {
             Cell cell = headerRow.getCell(i, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
-            String headerName = readString(cell);
+            String headerName = readString(cell, null);
             if (headerName == null) {
                 continue;
             }
@@ -132,7 +135,7 @@ public class ContractImportService {
         return result;
     }
 
-    private static String readString(Cell cell) {
+    private static String readString(Cell cell, FormulaEvaluator evaluator) {
         if (cell == null) {
             return null;
         }
@@ -150,7 +153,7 @@ public class ContractImportService {
                 yield BigDecimal.valueOf(value).stripTrailingZeros().toPlainString();
             }
             case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
-            case FORMULA -> emptyToNull(cell.toString());
+            case FORMULA -> readFormulaAsString(cell, evaluator);
             default -> null;
         };
     }
@@ -162,7 +165,7 @@ public class ContractImportService {
         if (cell.getCellType() == CellType.NUMERIC) {
             return BigDecimal.valueOf(cell.getNumericCellValue());
         }
-        String text = readString(cell);
+        String text = readString(cell, null);
         if (text == null) {
             return null;
         }
@@ -173,15 +176,15 @@ public class ContractImportService {
         }
     }
 
-    private static String readDate(Cell cell) {
+    private static String readDate(Cell cell, FormulaEvaluator evaluator) {
         if (cell == null) {
             return null;
         }
-        if (cell.getCellType() == CellType.NUMERIC && DateUtil.isCellDateFormatted(cell)) {
-            LocalDate date = cell.getDateCellValue().toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
-            return date.toString();
+        LocalDate numericDate = readExcelNumericDate(cell, evaluator);
+        if (numericDate != null) {
+            return numericDate.toString();
         }
-        String text = readString(cell);
+        String text = readString(cell, evaluator);
         if (text == null) {
             return null;
         }
@@ -196,6 +199,58 @@ public class ContractImportService {
         } catch (DateTimeParseException ignored) {
             return null;
         }
+    }
+
+    private static String readFormulaAsString(Cell cell, FormulaEvaluator evaluator) {
+        if (evaluator == null) {
+            return emptyToNull(cell.toString());
+        }
+        try {
+            CellValue value = evaluator.evaluate(cell);
+            if (value == null) {
+                return emptyToNull(cell.toString());
+            }
+            return switch (value.getCellType()) {
+                case STRING -> emptyToNull(value.getStringValue());
+                case NUMERIC -> {
+                    double numeric = value.getNumberValue();
+                    if (Math.floor(numeric) == numeric) {
+                        yield String.valueOf((long) numeric);
+                    }
+                    yield BigDecimal.valueOf(numeric).stripTrailingZeros().toPlainString();
+                }
+                case BOOLEAN -> String.valueOf(value.getBooleanValue());
+                default -> emptyToNull(cell.toString());
+            };
+        } catch (Exception ignored) {
+            return emptyToNull(cell.toString());
+        }
+    }
+
+    private static LocalDate readExcelNumericDate(Cell cell, FormulaEvaluator evaluator) {
+        try {
+            if (cell.getCellType() == CellType.NUMERIC) {
+                double numericValue = cell.getNumericCellValue();
+                if (DateUtil.isCellDateFormatted(cell) || looksLikeExcelDateSerial(numericValue)) {
+                    return DateUtil.getLocalDateTime(numericValue).toLocalDate();
+                }
+            }
+            if (cell.getCellType() == CellType.FORMULA && evaluator != null) {
+                CellValue value = evaluator.evaluate(cell);
+                if (value != null && value.getCellType() == CellType.NUMERIC) {
+                    double numericValue = value.getNumberValue();
+                    if (DateUtil.isCellDateFormatted(cell) || looksLikeExcelDateSerial(numericValue)) {
+                        return DateUtil.getLocalDateTime(numericValue).toLocalDate();
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private static boolean looksLikeExcelDateSerial(double value) {
+        return value >= 1 && value <= 60000;
     }
 
     private static boolean isEffectivelyEmpty(Map<String, Object> values) {

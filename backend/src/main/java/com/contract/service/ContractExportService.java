@@ -57,12 +57,17 @@ public class ContractExportService {
             }
 
             for (int i = 0; i < fields.size(); i++) {
-                sheet.autoSizeColumn(i);
+                try {
+                    sheet.autoSizeColumn(i);
+                } catch (RuntimeException ignored) {
+                    // 某些运行环境下自动列宽会触发POI/JDK图形依赖问题，降级为默认宽度以保证导出成功。
+                    sheet.setColumnWidth(i, 20 * 256);
+                }
             }
 
             workbook.write(outputStream);
             return outputStream.toByteArray();
-        } catch (IOException e) {
+        } catch (Exception e) {
             throw new IllegalStateException("导出Excel失败", e);
         }
     }

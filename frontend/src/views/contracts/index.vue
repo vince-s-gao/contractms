@@ -511,6 +511,48 @@ const getFileNameFromContentDisposition = (contentDisposition?: string) => {
   return `合同导出_${Date.now()}.xlsx`;
 };
 
+const readBlobText = async (blob?: Blob) => {
+  if (!(blob instanceof Blob)) {
+    return "";
+  }
+  try {
+    return await blob.text();
+  } catch (_error) {
+    return "";
+  }
+};
+
+const extractExportErrorMessage = async (error: unknown) => {
+  const fallback = "导出失败，请稍后重试";
+  const responseData = (error as {
+    response?: {
+      data?: Blob;
+      status?: number;
+    };
+    message?: string;
+  })?.response?.data;
+
+  const blobText = await readBlobText(responseData);
+  if (blobText) {
+    try {
+      const parsed = JSON.parse(blobText) as { message?: string };
+      if (parsed?.message) {
+        return parsed.message;
+      }
+    } catch (_error) {
+      if (blobText.trim()) {
+        return blobText.trim();
+      }
+    }
+  }
+
+  const status = (error as { response?: { status?: number } })?.response?.status;
+  if (status === 403) {
+    return "当前账号没有导出权限";
+  }
+  return (error as { message?: string })?.message || fallback;
+};
+
 const handleExportConfirm = async () => {
   if (selectedExportFields.value.length === 0) {
     ElMessage.warning("请至少选择一个导出字段");
@@ -547,7 +589,7 @@ const handleExportConfirm = async () => {
     exportDialogVisible.value = false;
   } catch (error) {
     console.error("导出合同失败:", error);
-    ElMessage.error("导出失败，请稍后重试");
+    ElMessage.error(await extractExportErrorMessage(error));
   } finally {
     exportLoading.value = false;
   }
