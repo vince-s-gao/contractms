@@ -59,21 +59,21 @@ CREATE TABLE IF NOT EXISTS contracts (
     INDEX idx_dates (start_date, end_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 合同审批流程表
-CREATE TABLE IF NOT EXISTS contract_approvals (
+-- 审批记录表
+CREATE TABLE IF NOT EXISTS approval_records (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     contract_id BIGINT NOT NULL,
     approver_id BIGINT NOT NULL,
-    approval_step INT NOT NULL,
-    approval_status ENUM('PENDING', 'APPROVED', 'REJECTED') DEFAULT 'PENDING',
-    approval_comment TEXT,
-    approval_time DATETIME,
-    created_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    approval_result TINYINT NOT NULL DEFAULT 0,
+    approval_opinion TEXT,
+    approval_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    next_approver_id BIGINT,
     FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE CASCADE,
     FOREIGN KEY (approver_id) REFERENCES users(id),
+    FOREIGN KEY (next_approver_id) REFERENCES users(id),
     INDEX idx_contract_id (contract_id),
     INDEX idx_approver_id (approver_id),
-    UNIQUE KEY uk_contract_approver (contract_id, approver_id)
+    INDEX idx_approval_time (approval_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 合同付款记录表

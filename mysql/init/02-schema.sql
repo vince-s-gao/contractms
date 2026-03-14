@@ -152,24 +152,22 @@ CREATE TABLE IF NOT EXISTS contract_attachments (
     FOREIGN KEY (uploader_id) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='合同附件表';
 
--- 合同审批记录表
-CREATE TABLE IF NOT EXISTS contract_approvals (
+-- 审批记录表
+CREATE TABLE IF NOT EXISTS approval_records (
     id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '审批记录ID',
-    tenant_id BIGINT DEFAULT 0 COMMENT '租户ID',
     contract_id BIGINT NOT NULL COMMENT '合同ID',
     approver_id BIGINT NOT NULL COMMENT '审批人ID',
-    approval_step INT NOT NULL COMMENT '审批步骤',
-    approval_status VARCHAR(20) DEFAULT 'PENDING' COMMENT '审批状态：PENDING-待审批,APPROVED-通过,REJECTED-拒绝',
-    approval_comment TEXT COMMENT '审批意见',
-    approval_time DATETIME COMMENT '审批时间',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    approval_result TINYINT NOT NULL DEFAULT 0 COMMENT '审批结果：0-待审批，1-通过，2-拒绝',
+    approval_opinion TEXT COMMENT '审批意见',
+    approval_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '审批时间',
+    next_approver_id BIGINT COMMENT '下一审批人ID',
     INDEX idx_contract_id (contract_id),
     INDEX idx_approver_id (approver_id),
-    INDEX idx_approval_status (approval_status),
-    UNIQUE KEY uk_contract_approver (contract_id, approver_id),
+    INDEX idx_approval_time (approval_time),
     FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE CASCADE,
-    FOREIGN KEY (approver_id) REFERENCES users(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='合同审批记录表';
+    FOREIGN KEY (approver_id) REFERENCES users(id),
+    FOREIGN KEY (next_approver_id) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='审批记录表';
 
 -- 付款计划表
 CREATE TABLE IF NOT EXISTS payment_plans (
