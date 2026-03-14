@@ -4,6 +4,7 @@ import { useUserStore } from "@/stores/user";
 import type { AxiosRequestConfig, RawAxiosRequestHeaders } from "axios";
 
 const SILENT_ERROR_HEADER = "X-Silent-Error-Message";
+const AUTH_FREE_PATHS = ["/auth/login", "/auth/register"];
 
 const shouldShowGlobalError = (config?: AxiosRequestConfig) => {
   const headers = config?.headers as
@@ -24,6 +25,11 @@ const shouldShowGlobalError = (config?: AxiosRequestConfig) => {
   return String(direct || "").toLowerCase() !== "true";
 };
 
+const isAuthFreeRequest = (config?: AxiosRequestConfig) => {
+  const url = config?.url || "";
+  return AUTH_FREE_PATHS.some((path) => url.endsWith(path) || url.includes(path));
+};
+
 // 创建axios实例
 const request = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || "/api",
@@ -35,14 +41,19 @@ request.interceptors.request.use(
   (config) => {
     const userStore = useUserStore();
     const token = userStore.getToken();
+    const isAuthFree = isAuthFreeRequest(config);
 
-    if (token) {
+    if (token && !isAuthFree) {
       config.headers.Authorization = `Bearer ${token}`;
+    } else if (config.headers?.Authorization) {
+      delete config.headers.Authorization;
     }
 
     // 添加用户ID头部
-    if (userStore.userInfo?.id) {
+    if (userStore.userInfo?.id && !isAuthFree) {
       config.headers["X-User-Id"] = userStore.userInfo.id;
+    } else if (config.headers?.["X-User-Id"]) {
+      delete config.headers["X-User-Id"];
     }
 
     return config;
@@ -79,17 +90,20 @@ request.interceptors.response.use(
   (error) => {
     const { status, data } = error.response || {};
     const showGlobalError = shouldShowGlobalError(error.config);
+    const isAuthFree = isAuthFreeRequest(error.config);
 
     switch (status) {
       case 401:
-        if (showGlobalError) {
+        if (showGlobalError && !isAuthFree) {
           ElMessage.error("登录已过期，请重新登录");
         }
-        useUserStore().clearUserInfo();
-        window.location.href = "/login";
+        if (!isAuthFree) {
+          useUserStore().clearUserInfo();
+          window.location.href = "/login";
+        }
         break;
       case 403:
-        if (showGlobalError) {
+        if (showGlobalError && !isAuthFree) {
           ElMessage.error("没有权限访问该资源");
         }
         break;

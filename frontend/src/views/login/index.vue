@@ -99,7 +99,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from "vue";
+import { onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import type { FormInstance, FormRules } from "element-plus";
@@ -125,6 +125,10 @@ const registerFormRef = ref<FormInstance>();
 const loading = ref(false);
 const registerLoading = ref(false);
 const registerDialogVisible = ref(false);
+
+onMounted(() => {
+  userStore.clearUserInfo();
+});
 
 const loginForm = reactive<LoginForm>({
   username: "",
