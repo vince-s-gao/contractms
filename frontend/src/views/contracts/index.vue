@@ -310,6 +310,11 @@ interface ContractTypeForm {
   name: string;
 }
 
+interface ImportErrorItem {
+  row?: number;
+  message?: string;
+}
+
 const loading = ref(false);
 const contractList = ref<ContractListItem[]>([]);
 const searchParams = reactive<SearchParams>({
@@ -604,6 +609,12 @@ const handleImportFileRemove = () => {
   importRawFile.value = null;
 };
 
+const formatImportErrors = (errors: ImportErrorItem[]) => {
+  return errors
+    .map((item) => `第${item.row || "?"}行：${item.message || "导入失败"}`)
+    .join("\n");
+};
+
 const handleImportConfirm = async () => {
   if (!importRawFile.value) {
     ElMessage.warning("请先选择Excel文件");
@@ -614,9 +625,24 @@ const handleImportConfirm = async () => {
     const formData = new FormData();
     formData.append("file", importRawFile.value);
     const result = await importContracts(formData, importOverwrite.value);
+    const failedCount = Number(result.failed || 0);
+    const errors = Array.isArray(result.errors)
+      ? (result.errors as ImportErrorItem[])
+      : [];
     ElMessage.success(
       `导入完成：新增${result.success || 0}，更新${result.updated || 0}，跳过${result.skipped || 0}，失败${result.failed || 0}`,
     );
+    if (failedCount > 0 && errors.length > 0) {
+      await ElMessageBox.alert(
+        `以下是前 ${errors.length} 条失败原因：\n\n${formatImportErrors(errors)}`,
+        `导入失败明细（共 ${failedCount} 条）`,
+        {
+          confirmButtonText: "知道了",
+          type: "warning",
+          customClass: "import-error-alert",
+        },
+      );
+    }
     importDialogVisible.value = false;
     importFileList.value = [];
     importRawFile.value = null;
