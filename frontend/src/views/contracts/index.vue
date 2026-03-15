@@ -572,6 +572,15 @@ const handleExportConfirm = async () => {
     if (searchParams.keyword) {
       params.keyword = searchParams.keyword;
     }
+    if (searchParams.customerName) {
+      params.customerName = searchParams.customerName;
+    }
+    if (searchParams.contractType) {
+      params.contractType = searchParams.contractType;
+    }
+    if (searchParams.signingYears.length > 0) {
+      params.signingYears = searchParams.signingYears.join(",");
+    }
     const response = await exportContracts(params);
     const blob = new Blob([response.data], {
       type:

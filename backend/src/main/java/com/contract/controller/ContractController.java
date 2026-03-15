@@ -103,12 +103,16 @@ public class ContractController {
     @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAnyAuthority('contract:write','contract:read')")
     public ResponseEntity<byte[]> exportContracts(@RequestParam(required = false) String fields,
                                                   @RequestParam(required = false) String keyword,
+                                                  @RequestParam(required = false) String customerName,
+                                                  @RequestParam(required = false) String contractType,
+                                                  @RequestParam(required = false) String signingYears,
                                                   @RequestParam(required = false) String status,
                                                   @RequestParam(required = false) String startDate,
                                                   @RequestParam(required = false) String endDate,
                                                   Authentication authentication) {
         List<String> selectedFields = parseExportFields(fields);
-        List<Map<String, Object>> records = queryContractsForExport(keyword, status, startDate, endDate);
+        List<Map<String, Object>> records = queryContractsForExport(
+                keyword, customerName, contractType, signingYears, status, startDate, endDate);
         byte[] fileContent = contractExportService.exportToExcel(records, selectedFields);
         operationLogService.log(authentication, "EXPORT", "CONTRACT",
                 "导出合同成功，导出条数=" + records.size(), "SUCCESS", null);
@@ -163,6 +167,7 @@ public class ContractController {
                 }
 
                 String contractType = toContractType(asString(values.get("contractType")));
+                ensureContractTypeAvailable(contractType);
                 BigDecimal taxRate = asBigDecimalOrNull(values.get("taxRate"));
                 if (taxRate == null) {
                     taxRate = BigDecimal.ZERO;
@@ -199,6 +204,8 @@ public class ContractController {
                                         contract_type = ?,
                                         signing_year = ?,
                                         tax_rate = ?,
+                                        party_a = ?,
+                                        party_b = ?,
                                         amount = ?,
                                         start_date = ?,
                                         end_date = ?,
@@ -208,7 +215,7 @@ public class ContractController {
                                         updated_time = NOW()
                                     WHERE id = ?
                                     """,
-                            contractName, contractType, signingYear, taxRate, amount,
+                            contractName, contractType, signingYear, taxRate, partyA, partyB, amount,
                             toSqlDate(startDate), toSqlDate(endDate),
                             dbStatus, description, createdBy, existingId);
                     updated++;
@@ -583,6 +590,7 @@ public class ContractController {
         }
 
         String contractType = toContractType(asString(request.get("contractType")));
+        ensureContractTypeAvailable(contractType);
         Integer signingYear = extractSigningYearFromContractNo(contractNo);
         BigDecimal taxRate = asBigDecimalOrNull(request.get("taxRate"));
         if (taxRate == null) {
@@ -593,8 +601,12 @@ public class ContractController {
         LocalDate endDate = asDate(request.get("endDate"));
         Long createdBy = asLong(request.get("createdBy"), 1L);
         String description = asString(request.get("description"));
-        String partyName = defaultIfBlank(asString(request.get("partyName")), "未知甲方");
-        String partyContact = defaultIfBlank(asString(request.get("partyContact")), "未知乙方");
+        String partyName = defaultIfBlank(
+                firstNonBlank(asString(request.get("customerName")), asString(request.get("partyName"))),
+                "未知甲方");
+        String partyContact = defaultIfBlank(
+                firstNonBlank(asString(request.get("companySignatory")), asString(request.get("partyContact"))),
+                "未知乙方");
 
         String insertSql = """
                 INSERT INTO contracts (
@@ -672,6 +684,9 @@ public class ContractController {
         String mappedType = isBlank(asString(request.get("contractType")))
                 ? null
                 : toContractType(asString(request.get("contractType")));
+        if (!isBlank(mappedType)) {
+            ensureContractTypeAvailable(mappedType);
+        }
 
         jdbcTemplate.update(updateSql,
                 nullable(contractNo),
@@ -683,8 +698,8 @@ public class ContractController {
                 toSqlDate(asDate(request.get("startDate"))),
                 toSqlDate(asDate(request.get("endDate"))),
                 nullable(asString(request.get("description"))),
-                nullable(asString(request.get("partyName"))),
-                nullable(asString(request.get("partyContact"))),
+                nullable(firstNonBlank(asString(request.get("customerName")), asString(request.get("partyName")))),
+                nullable(firstNonBlank(asString(request.get("companySignatory")), asString(request.get("partyContact")))),
                 resetStatus,
                 asLong(request.get("updatedBy"), null),
                 id);
@@ -1647,6 +1662,21 @@ public class ContractController {
                 code, name);
     }
 
+    private void ensureContractTypeAvailable(String rawCode) {
+        String code = normalizeContractTypeCode(rawCode);
+        if (!isValidContractTypeCode(code)) {
+            return;
+        }
+        ensureContractTypeMetaTable();
+        List<String> enumCodes = getContractTypeEnumCodes();
+        if (!enumCodes.contains(code)) {
+            List<String> updatedCodes = new ArrayList<>(enumCodes);
+            updatedCodes.add(code);
+            updateContractTypeEnum(updatedCodes);
+        }
+        upsertContractTypeMeta(code, defaultContractTypeName(code));
+    }
+
     private static String normalizeContractTypeCode(String code) {
         if (isBlank(code)) {
             return null;
@@ -1806,6 +1836,13 @@ public class ContractController {
         return isBlank(value) ? defaultValue : value;
     }
 
+    private static String firstNonBlank(String primary, String fallback) {
+        if (!isBlank(primary)) {
+            return primary;
+        }
+        return fallback;
+    }
+
     private static void appendPlaceholders(StringBuilder sql, int size) {
         for (int i = 0; i < size; i++) {
             if (i > 0) {
@@ -1876,9 +1913,13 @@ public class ContractController {
     }
 
     private List<Map<String, Object>> queryContractsForExport(String keyword,
+                                                              String customerName,
+                                                              String contractType,
+                                                              String signingYears,
                                                               String status,
                                                               String startDate,
                                                               String endDate) {
+        ensureContractTypeMetaTable();
         StringBuilder sql = new StringBuilder("""
                 SELECT c.id,
                        c.id AS contractId,
@@ -1886,7 +1927,19 @@ public class ContractController {
                        c.contract_no AS contractNumber,
                        c.signing_year AS signingYear,
                        c.contract_name AS contractName,
+                       COALESCE(NULLIF(TRIM(c.party_a), ''), '') AS customerName,
+                       COALESCE(NULLIF(TRIM(c.party_b), ''), '') AS companySignatory,
                        c.contract_type AS contractType,
+                       COALESCE(
+                           NULLIF(TRIM(ctm.type_name), ''),
+                           CASE c.contract_type
+                               WHEN 'SALES' THEN '销售合同'
+                               WHEN 'PURCHASE' THEN '采购合同'
+                               WHEN 'SERVICE' THEN '服务合同'
+                               WHEN 'OTHER' THEN '其他'
+                               ELSE c.contract_type
+                           END
+                       ) AS contractTypeLabel,
                        c.amount AS amount,
                        COALESCE(NULLIF(u.real_name, ''), NULLIF(u.username, ''), CONCAT('用户#', c.created_by)) AS createdBy,
                        DATE_FORMAT(CONVERT_TZ(c.created_time, '+00:00', '+08:00'), '%Y-%m-%d %H:%i:%s') AS createdAt,
@@ -1903,15 +1956,32 @@ public class ContractController {
                        END AS status
                 FROM contracts c
                 LEFT JOIN users u ON u.id = c.created_by
+                LEFT JOIN contract_type_meta ctm ON ctm.type_code = c.contract_type
                 WHERE 1=1
                 """);
         List<Object> params = new ArrayList<>();
 
         if (!isBlank(keyword)) {
-            sql.append(" AND (c.contract_no LIKE ? OR c.contract_name LIKE ?)");
+            sql.append(" AND (c.contract_no LIKE ? OR c.contract_name LIKE ? OR c.party_a LIKE ?)");
             String likeKeyword = "%" + keyword.trim() + "%";
             params.add(likeKeyword);
             params.add(likeKeyword);
+            params.add(likeKeyword);
+        }
+        if (!isBlank(customerName)) {
+            sql.append(" AND c.party_a LIKE ?");
+            params.add("%" + customerName.trim() + "%");
+        }
+        if (!isBlank(contractType)) {
+            sql.append(" AND c.contract_type = ?");
+            params.add(contractType.trim().toUpperCase(Locale.ROOT));
+        }
+        List<Integer> signingYearList = parseSigningYears(signingYears);
+        if (!signingYearList.isEmpty()) {
+            sql.append(" AND c.signing_year IN (");
+            appendPlaceholders(sql, signingYearList.size());
+            sql.append(")");
+            params.addAll(signingYearList);
         }
         if (!isBlank(status)) {
             sql.append(" AND c.status = ?");

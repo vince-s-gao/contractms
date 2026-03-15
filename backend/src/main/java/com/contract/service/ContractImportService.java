@@ -16,18 +16,6 @@ import java.util.*;
 public class ContractImportService {
 
     private static final Map<String, String> HEADER_TO_FIELD = new LinkedHashMap<>();
-    private static final List<String> POSITIONAL_FIELDS = List.of(
-            "contractNo",
-            "contractName",
-            "customerName",
-            "companySignatory",
-            "contractType",
-            "amount",
-            "status",
-            "startDate",
-            "endDate",
-            "createdBy"
-    );
     private static final List<DateTimeFormatter> DATE_FORMATTERS = List.of(
             DateTimeFormatter.ofPattern("yyyy-MM-dd"),
             DateTimeFormatter.ofPattern("yyyy/M/d"),
@@ -70,7 +58,7 @@ public class ContractImportService {
 
             Map<Integer, String> fieldByColumn = parseHeader(headerRow);
             if (fieldByColumn.isEmpty()) {
-                fieldByColumn = parseHeaderByPosition(headerRow);
+                throw new IllegalArgumentException("无法识别Excel表头，请使用系统模板表头，例如：合同编号、合同名称、客户名称、公司签约主体、合同类型、合同金额、状态、开始日期、结束日期");
             }
 
             List<ImportRow> rows = new ArrayList<>();
@@ -86,7 +74,7 @@ public class ContractImportService {
                     String field = entry.getValue();
                     Cell cell = row.getCell(col, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
                     Object value = switch (field) {
-                        case "amount" -> readNumeric(cell);
+                        case "amount" -> readNumeric(cell, formulaEvaluator);
                         case "startDate", "endDate" -> readDate(cell, formulaEvaluator);
                         default -> readString(cell, formulaEvaluator);
                     };
@@ -125,16 +113,6 @@ public class ContractImportService {
         return result;
     }
 
-    private static Map<Integer, String> parseHeaderByPosition(Row headerRow) {
-        Map<Integer, String> result = new HashMap<>();
-        short maxCell = headerRow.getLastCellNum();
-        int maxColumns = Math.max(maxCell, (short) POSITIONAL_FIELDS.size());
-        for (int i = 0; i < maxColumns && i < POSITIONAL_FIELDS.size(); i++) {
-            result.put(i, POSITIONAL_FIELDS.get(i));
-        }
-        return result;
-    }
-
     private static String readString(Cell cell, FormulaEvaluator evaluator) {
         if (cell == null) {
             return null;
@@ -158,14 +136,31 @@ public class ContractImportService {
         };
     }
 
-    private static BigDecimal readNumeric(Cell cell) {
+    private static BigDecimal readNumeric(Cell cell, FormulaEvaluator evaluator) {
         if (cell == null) {
             return null;
         }
         if (cell.getCellType() == CellType.NUMERIC) {
             return BigDecimal.valueOf(cell.getNumericCellValue());
         }
-        String text = readString(cell, null);
+        if (cell.getCellType() == CellType.FORMULA && evaluator != null) {
+            try {
+                CellValue value = evaluator.evaluate(cell);
+                if (value != null) {
+                    if (value.getCellType() == CellType.NUMERIC) {
+                        return BigDecimal.valueOf(value.getNumberValue());
+                    }
+                    if (value.getCellType() == CellType.STRING) {
+                        String text = emptyToNull(value.getStringValue());
+                        if (text != null) {
+                            return new BigDecimal(text.replace(",", ""));
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        String text = readString(cell, evaluator);
         if (text == null) {
             return null;
         }

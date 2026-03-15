@@ -14,8 +14,10 @@ export interface Contract {
   status: string;
   startDate: string;
   endDate: string;
-  partyName: string;
-  partyContact: string;
+  customerName?: string;
+  companySignatory?: string;
+  partyName?: string;
+  partyContact?: string;
   partyPhone: string;
   ourSignatory: string;
   contractSummary?: string;
@@ -35,6 +37,8 @@ export interface ContractUpsertPayload {
   startDate: string;
   endDate: string;
   description?: string;
+  customerName?: string;
+  companySignatory?: string;
   partyName?: string;
   partyContact?: string;
   partyPhone?: string;
@@ -69,6 +73,9 @@ export interface ContractQueryParams {
 export interface ContractExportParams {
   fields?: string;
   keyword?: string;
+  customerName?: string;
+  contractType?: string;
+  signingYears?: string;
   status?: string;
   startDate?: string;
   endDate?: string;

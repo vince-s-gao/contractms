@@ -52,7 +52,7 @@ public class ContractExportService {
                 for (int col = 0; col < fields.size(); col++) {
                     String field = fields.get(col);
                     Cell cell = row.createCell(col);
-                    writeCellValue(cell, field, record.get(field));
+                    writeCellValue(cell, field, record);
                 }
             }
 
@@ -89,7 +89,8 @@ public class ContractExportService {
         return validFields;
     }
 
-    private static void writeCellValue(Cell cell, String field, Object value) {
+    private static void writeCellValue(Cell cell, String field, Map<String, Object> record) {
+        Object value = record == null ? null : record.get(field);
         if ("amount".equals(field)) {
             BigDecimal amount = toBigDecimal(value);
             if (amount != null) {
@@ -102,7 +103,12 @@ public class ContractExportService {
             return;
         }
         if ("contractType".equals(field)) {
-            cell.setCellValue(toContractTypeText(value));
+            Object label = record == null ? null : record.get("contractTypeLabel");
+            cell.setCellValue(toContractTypeText(label != null ? label : value));
+            return;
+        }
+        if ("customerName".equals(field) || "companySignatory".equals(field)) {
+            cell.setCellValue(value == null ? "" : value.toString().trim());
             return;
         }
         cell.setCellValue(value == null ? "" : value.toString());
@@ -142,13 +148,14 @@ public class ContractExportService {
         if (value == null) {
             return "";
         }
-        String type = value.toString().toUpperCase(Locale.ROOT);
+        String raw = value.toString().trim();
+        String type = raw.toUpperCase(Locale.ROOT);
         return switch (type) {
-            case "SALES" -> "销售";
-            case "PURCHASE" -> "采购";
-            case "SERVICE" -> "服务";
+            case "SALES" -> "销售合同";
+            case "PURCHASE" -> "采购合同";
+            case "SERVICE" -> "服务合同";
             case "OTHER" -> "其他";
-            default -> value.toString();
+            default -> raw;
         };
     }
 }

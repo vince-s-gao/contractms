@@ -598,6 +598,8 @@ const handleSubmit = async () => {
       startDate: formData.startDate,
       endDate: formData.endDate,
       description: formData.content,
+      customerName: formData.customerName || "",
+      companySignatory: formData.companySignatory || "",
       partyName: formData.customerName || "",
       partyContact: formData.companySignatory || "",
       partyPhone:
