@@ -109,14 +109,14 @@
             >查看合同</el-button
           >
           <el-button
-            v-if="task.status === 'pending'"
+            v-if="task.status === 'pending' && canProcessApproval"
             type="success"
             @click="handleApprove(task)"
           >
             通过
           </el-button>
           <el-button
-            v-if="task.status === 'pending'"
+            v-if="task.status === 'pending' && canProcessApproval"
             type="danger"
             @click="handleReject(task)"
           >
@@ -198,7 +198,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from "vue";
+import { computed, ref, reactive, onMounted } from "vue";
 import { ElMessage } from "element-plus";
 import ApprovalDialog from "./components/ApprovalDialog.vue";
 import ContractDetailDialog from "../contracts/components/ContractDetailDialog.vue";
@@ -213,6 +213,7 @@ import {
   type ContractTypeItem,
 } from "@/api/contract";
 import { DEFAULT_CONTRACT_TYPE_LIST } from "@/constants/contract";
+import { useUserStore } from "@/stores/user";
 import { extractErrorMessage } from "@/utils/error";
 
 interface ApprovalTask {
@@ -264,9 +265,17 @@ const approvalDetailDialogVisible = ref(false);
 const approvalDetailLoading = ref(false);
 const approvalDetailTask = ref<ApprovalTask | null>(null);
 const approvalDetailRecords = ref<ContractApprovalRecord[]>([]);
+const userStore = useUserStore();
 const contractTypeList = ref<ContractTypeItem[]>([
   ...DEFAULT_CONTRACT_TYPE_LIST,
 ]);
+const canProcessApproval = computed(() =>
+  userStore.hasAnyPermission([
+    "APPROVAL_PROCESS",
+    "CONTRACT_APPROVE",
+    "contract:approval",
+  ]),
+);
 
 onMounted(() => {
   loadContractTypeList();

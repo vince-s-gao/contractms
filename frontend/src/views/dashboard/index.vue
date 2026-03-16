@@ -36,19 +36,19 @@
           text-color="#bfcbd9"
           active-text-color="#409EFF"
         >
-          <el-menu-item index="/dashboard">
+          <el-menu-item v-if="canViewDashboard" index="/dashboard">
             <el-icon><Odometer /></el-icon>
             <span>仪表板</span>
           </el-menu-item>
-          <el-menu-item index="/contracts">
+          <el-menu-item v-if="canViewContracts" index="/contracts">
             <el-icon><Document /></el-icon>
             <span>合同管理</span>
           </el-menu-item>
-          <el-menu-item index="/approval">
+          <el-menu-item v-if="canViewApproval" index="/approval">
             <el-icon><Check /></el-icon>
             <span>合同审批</span>
           </el-menu-item>
-          <el-menu-item index="/permissions">
+          <el-menu-item v-if="canManagePermissions" index="/permissions">
             <el-icon><Setting /></el-icon>
             <span>权限管理</span>
           </el-menu-item>
@@ -79,6 +79,33 @@ const router = useRouter();
 const route = useRoute();
 const userStore = useUserStore();
 const activeMenu = computed(() => route.path);
+const canViewDashboard = computed(() =>
+  userStore.hasAnyPermission(["DASHBOARD:VIEW"]),
+);
+const canViewContracts = computed(() =>
+  userStore.hasAnyPermission([
+    "CONTRACT_VIEW",
+    "CONTRACT_CREATE",
+    "CONTRACT_EDIT",
+    "CONTRACT_DELETE",
+    "CONTRACT_BATCH_UPLOAD",
+    "CONTRACT_EXPORT",
+    "CONTRACT_TYPE_MANAGE",
+    "contract:read",
+    "contract:write",
+  ]),
+);
+const canViewApproval = computed(() =>
+  userStore.hasAnyPermission([
+    "APPROVAL_VIEW",
+    "APPROVAL_PROCESS",
+    "CONTRACT_APPROVE",
+    "contract:approval",
+  ]),
+);
+const canManagePermissions = computed(() =>
+  userStore.hasAnyPermission(["SYSTEM:PERMISSION", "system:permission"]),
+);
 const userInfo = ref<UserInfo>({ username: "", role: "" });
 
 onMounted(() => {
@@ -100,7 +127,13 @@ const handleCommand = async (command: string) => {
 
       userStore.clearUserInfo();
       ElMessage.success("退出成功");
-      router.push("/login");
+      try {
+        await router.replace("/login");
+      } finally {
+        if (router.currentRoute.value.path !== "/login") {
+          window.location.replace("/login");
+        }
+      }
     } catch {
       // 用户取消操作
     }

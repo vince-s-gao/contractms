@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
+import java.time.LocalDateTime;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
@@ -86,12 +87,7 @@ public class UserServiceImpl implements UserService {
         user.setPassword(passwordEncoder.encode(user.getPassword()));
         
         // 设置默认角色
-        Role defaultRole = roleRepository.findByName("USER")
-                .orElseGet(() -> {
-                    Role role = new Role("USER", "普通用户");
-                    role.setRoleCode("ROLE_USER");
-                    return roleRepository.save(role);
-                });
+        Role defaultRole = resolveDefaultUserRole();
         user.setRole(defaultRole);
         
         return userRepository.save(user);
@@ -113,12 +109,37 @@ public class UserServiceImpl implements UserService {
         user.setEnabled(true);
         user.setUpdateTime(java.time.LocalDateTime.now());
 
-        Role defaultRole = roleRepository.findByRoleCodeIgnoreCase("USER")
-                .or(() -> roleRepository.findByRoleCodeIgnoreCase("ROLE_USER"))
-                .or(() -> roleRepository.findByName("普通用户"))
-                .orElseThrow(() -> new RuntimeException("默认角色不存在，请先初始化角色数据"));
+        Role defaultRole = resolveDefaultUserRole();
         user.setRole(defaultRole);
         return userRepository.save(user);
+    }
+
+    private Role resolveDefaultUserRole() {
+        return roleRepository.findByRoleCodeIgnoreCase("USER")
+                .or(() -> roleRepository.findByRoleCodeIgnoreCase("ROLE_USER")
+                        .map(this::normalizeUserRoleCode))
+                .or(() -> roleRepository.findByName("普通用户"))
+                .or(() -> roleRepository.findByName("USER"))
+                .orElseGet(this::createDefaultUserRole);
+    }
+
+    private Role normalizeUserRoleCode(Role role) {
+        if (role == null) {
+            return null;
+        }
+        if (!"USER".equalsIgnoreCase(role.getRoleCode())) {
+            role.setRoleCode("USER");
+            role.setUpdateTime(LocalDateTime.now());
+            return roleRepository.save(role);
+        }
+        return role;
+    }
+
+    private Role createDefaultUserRole() {
+        Role role = new Role("普通用户", "普通用户");
+        role.setRoleCode("USER");
+        role.setPermissions("CONTRACT_VIEW,DASHBOARD:VIEW");
+        return roleRepository.save(role);
     }
     
     @Override

@@ -21,10 +21,14 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -71,12 +75,14 @@ public class AuthController {
             if (user.getRole() != null && user.getRole().getRoleCode() != null) {
                 roleCode = user.getRole().getRoleCode();
             }
+            List<String> permissionCodes = extractPermissionCodes(user);
             response.put("token", token);
             response.put("username", normalizedUsername);
             response.put("user", Map.of(
                     "id", user.getId(),
                     "username", user.getUsername(),
-                    "role", roleCode
+                    "role", roleCode,
+                    "permissionCodes", permissionCodes
             ));
             response.put("expiresIn", jwtExpiration);
             response.put("message", "登录成功");
@@ -140,6 +146,19 @@ public class AuthController {
                 .setExpiration(new Date(System.currentTimeMillis() + jwtExpiration))
                 .signWith(key)
                 .compact();
+    }
+
+    private static List<String> extractPermissionCodes(User user) {
+        Set<String> result = new LinkedHashSet<>();
+        if (user != null && user.getRole() != null && user.getRole().getPermissions() != null) {
+            for (String item : user.getRole().getPermissions().split(",")) {
+                String code = item == null ? "" : item.trim();
+                if (!code.isEmpty()) {
+                    result.add(code);
+                }
+            }
+        }
+        return new ArrayList<>(result);
     }
     
     // 内部类用于登录请求

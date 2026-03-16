@@ -75,17 +75,32 @@
       </div>
       <div class="search-actions">
         <el-button @click="handleReset">重置</el-button>
-        <el-button type="warning" plain @click="handleOpenImport">
+        <el-button
+          v-if="canBatchUploadContract"
+          type="warning"
+          plain
+          @click="handleOpenImport"
+        >
           批量上传
         </el-button>
-        <el-button type="primary" plain @click="handleOpenExport">
+        <el-button
+          v-if="canExportContract"
+          type="primary"
+          plain
+          @click="handleOpenExport"
+        >
           导出合同
         </el-button>
-        <el-button type="success" @click="handleCreate">
+        <el-button v-if="canCreateContract" type="success" @click="handleCreate">
           <el-icon><Plus /></el-icon>
           新建合同
         </el-button>
-        <el-button type="info" plain @click="handleOpenTypeManage">
+        <el-button
+          v-if="canManageContractType"
+          type="info"
+          plain
+          @click="handleOpenTypeManage"
+        >
           合同类型管理
         </el-button>
       </div>
@@ -170,20 +185,25 @@
           width="120"
           sortable="custom"
         />
-        <el-table-column label="操作" width="260" fixed="right">
+        <el-table-column
+          v-if="hasContractActionColumn"
+          label="操作"
+          width="260"
+          fixed="right"
+        >
           <template #default="{ row }">
-            <el-button link type="primary" @click="handleView(row)"
+            <el-button v-if="canViewContract" link type="primary" @click="handleView(row)"
               >查看</el-button
             >
             <el-button
-              v-if="row.status === 'draft' || isAdminUser"
+              v-if="canEditContract && (row.status === 'draft' || isAdminUser)"
               link
               type="warning"
               @click="handleEdit(row)"
               >编辑</el-button
             >
             <el-button
-              v-if="row.status === 'draft'"
+              v-if="canDeleteContract && row.status === 'draft'"
               link
               type="danger"
               @click="handleDelete(row)"
@@ -460,6 +480,44 @@ const isAdminUser = computed(() => {
     role === "ROLE_ROLE_ADMIN"
   );
 });
+const canViewContract = computed(() =>
+  userStore.hasAnyPermission([
+    "CONTRACT_VIEW",
+    "contract:read",
+    "contract:write",
+    "CONTRACT_CREATE",
+    "CONTRACT_EDIT",
+    "CONTRACT_DELETE",
+    "CONTRACT_EXPORT",
+    "CONTRACT_BATCH_UPLOAD",
+    "CONTRACT_TYPE_MANAGE",
+  ]),
+);
+const canCreateContract = computed(() =>
+  userStore.hasAnyPermission(["CONTRACT_CREATE", "contract:write"]),
+);
+const canEditContract = computed(() =>
+  userStore.hasAnyPermission(["CONTRACT_EDIT", "contract:write"]),
+);
+const canDeleteContract = computed(() =>
+  userStore.hasAnyPermission(["CONTRACT_DELETE", "contract:delete"]),
+);
+const canBatchUploadContract = computed(() =>
+  userStore.hasAnyPermission(["CONTRACT_BATCH_UPLOAD", "contract:write"]),
+);
+const canExportContract = computed(() =>
+  userStore.hasAnyPermission([
+    "CONTRACT_EXPORT",
+    "contract:write",
+    "contract:read",
+  ]),
+);
+const canManageContractType = computed(() =>
+  userStore.hasAnyPermission(["CONTRACT_TYPE_MANAGE", "contract:write"]),
+);
+const hasContractActionColumn = computed(
+  () => canViewContract.value || canEditContract.value || canDeleteContract.value,
+);
 const exportFieldOptions: ExportFieldOption[] = [
   { label: "合同编号", value: "contractNo" },
   { label: "签约年份", value: "signingYear" },

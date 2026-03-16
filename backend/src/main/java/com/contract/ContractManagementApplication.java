@@ -56,11 +56,13 @@ public class ContractManagementApplication implements CommandLineRunner {
                 });
         
         // 初始化用户角色
-        Role userRole = roleRepository.findByName("USER")
+        Role userRole = roleRepository.findByRoleCodeIgnoreCase("USER")
+                .or(() -> roleRepository.findByRoleCodeIgnoreCase("ROLE_USER"))
+                .or(() -> roleRepository.findByName("USER"))
                 .orElseGet(() -> {
-                    Role role = new Role("USER", "普通用户");
-                    role.setRoleCode("ROLE_USER");
-                    role.setPermissions("contract:read");
+                    Role role = new Role("普通用户", "普通用户");
+                    role.setRoleCode("USER");
+                    role.setPermissions("CONTRACT_VIEW,DASHBOARD:VIEW");
                     return roleRepository.save(role);
                 });
         

@@ -94,6 +94,7 @@
               >{{ formatFileSize(file.size) }} | {{ file.uploadTime }}</span
             >
             <el-button
+              v-if="canDownloadAttachment"
               link
               type="primary"
               size="small"
@@ -126,7 +127,7 @@
     <template #footer>
       <el-button @click="handleClose">关闭</el-button>
       <el-button
-        v-if="contractDetail?.status === 'draft'"
+        v-if="contractDetail?.status === 'draft' && canSubmitApproval"
         type="primary"
         :loading="submittingApproval"
         @click="handleSubmitApproval"
@@ -138,7 +139,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import {
   downloadContractAttachment,
@@ -152,6 +153,7 @@ import {
   type ContractTypeItem,
 } from "@/api/contract";
 import { DEFAULT_CONTRACT_TYPE_LIST } from "@/constants/contract";
+import { useUserStore } from "@/stores/user";
 import { extractErrorMessage } from "@/utils/error";
 
 interface ContractDetail {
@@ -238,6 +240,7 @@ const emit = defineEmits<{
 const visible = ref(false);
 const loading = ref(false);
 const submittingApproval = ref(false);
+const userStore = useUserStore();
 const contractDetail = ref<ContractDetail | null>(null);
 const participants = ref<Participant[]>([]);
 const attachments = ref<Attachment[]>([]);
@@ -245,6 +248,16 @@ const approvalRecords = ref<ApprovalRecord[]>([]);
 const contractTypeList = ref<ContractTypeItem[]>([
   ...DEFAULT_CONTRACT_TYPE_LIST,
 ]);
+const canDownloadAttachment = computed(() =>
+  userStore.hasAnyPermission(["FILE_DOWNLOAD", "contract:read", "contract:write"]),
+);
+const canSubmitApproval = computed(() =>
+  userStore.hasAnyPermission([
+    "CONTRACT_APPROVE",
+    "APPROVAL_PROCESS",
+    "contract:approval",
+  ]),
+);
 
 // 监听props变化
 watch(
