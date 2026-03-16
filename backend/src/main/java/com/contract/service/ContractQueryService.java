@@ -114,7 +114,7 @@ public class ContractQueryService {
             params.add(startDate);
         }
         if (!isBlank(endDate)) {
-            listSql.append(" AND c.end_date <= ?");
+            listSql.append(" AND c.start_date <= ?");
             params.add(endDate);
         }
         String orderByColumn = resolveContractSortColumn(sortBy);
@@ -164,7 +164,7 @@ public class ContractQueryService {
             countParams.add(startDate);
         }
         if (!isBlank(endDate)) {
-            countSql.append(" AND c.end_date <= ?");
+            countSql.append(" AND c.start_date <= ?");
             countParams.add(endDate);
         }
 

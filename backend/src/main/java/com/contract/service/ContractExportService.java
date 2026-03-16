@@ -25,7 +25,7 @@ public class ContractExportService {
         FIELD_LABELS.put("contractType", "合同类型");
         FIELD_LABELS.put("amount", "合同金额");
         FIELD_LABELS.put("status", "状态");
-        FIELD_LABELS.put("startDate", "开始日期");
+        FIELD_LABELS.put("startDate", "签署日期");
         FIELD_LABELS.put("endDate", "结束日期");
         FIELD_LABELS.put("createdBy", "创建人");
         FIELD_LABELS.put("createdAt", "创建时间");

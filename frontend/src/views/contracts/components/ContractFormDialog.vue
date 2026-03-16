@@ -127,11 +127,11 @@
 
         <el-row :gutter="20">
           <el-col :span="12">
-            <el-form-item label="开始日期" prop="startDate">
+            <el-form-item label="签署日期" prop="startDate">
               <el-date-picker
                 v-model="formData.startDate"
                 type="date"
-                placeholder="选择开始日期"
+                placeholder="选择签署日期"
                 style="width: 100%"
                 value-format="YYYY-MM-DD"
               />
@@ -401,7 +401,7 @@ const formRules: FormRules = {
   contractType: [
     { required: true, message: "请选择合同类型", trigger: "change" },
   ],
-  startDate: [{ required: true, message: "请选择开始日期", trigger: "change" }],
+  startDate: [{ required: true, message: "请选择签署日期", trigger: "change" }],
   endDate: [{ required: true, message: "请选择结束日期", trigger: "change" }],
 };
 

@@ -79,7 +79,7 @@
                 >合同编号：{{ task.contractNumber }}</span
               >
               <span class="contract-type"
-                >合同类型：{{ task.contractType }}</span
+                >合同类型：{{ getContractTypeLabel(task.contractType) }}</span
               >
               <span class="contract-amount"
                 >金额：¥{{ formatAmount(task.amount) }}</span
@@ -171,7 +171,7 @@
             {{ approvalDetailTask?.contractName || "-" }}
           </el-descriptions-item>
           <el-descriptions-item label="合同类型">
-            {{ approvalDetailTask?.contractType || "-" }}
+            {{ getContractTypeLabel(approvalDetailTask?.contractType) }}
           </el-descriptions-item>
         </el-descriptions>
 
@@ -203,13 +203,16 @@ import { ElMessage } from "element-plus";
 import ApprovalDialog from "./components/ApprovalDialog.vue";
 import ContractDetailDialog from "../contracts/components/ContractDetailDialog.vue";
 import {
+  getContractTypes,
   getApprovalRecords,
   getApprovalTasks,
   getContractApprovalRecords,
   type ApprovalRecordItem,
   type ApprovalTaskItem,
   type ContractApprovalRecord,
+  type ContractTypeItem,
 } from "@/api/contract";
+import { DEFAULT_CONTRACT_TYPE_LIST } from "@/constants/contract";
 import { extractErrorMessage } from "@/utils/error";
 
 interface ApprovalTask {
@@ -261,11 +264,31 @@ const approvalDetailDialogVisible = ref(false);
 const approvalDetailLoading = ref(false);
 const approvalDetailTask = ref<ApprovalTask | null>(null);
 const approvalDetailRecords = ref<ContractApprovalRecord[]>([]);
+const contractTypeList = ref<ContractTypeItem[]>([
+  ...DEFAULT_CONTRACT_TYPE_LIST,
+]);
 
 onMounted(() => {
+  loadContractTypeList();
   loadApprovalTasks();
   loadApprovalRecords();
 });
+
+const loadContractTypeList = async () => {
+  try {
+    const response = await getContractTypes();
+    const records = response.records || response.data?.records || [];
+    if (Array.isArray(records) && records.length > 0) {
+      contractTypeList.value = records;
+      return;
+    }
+  } catch (error) {
+    console.error("加载合同类型失败:", error);
+  }
+  if (!contractTypeList.value.length) {
+    contractTypeList.value = [...DEFAULT_CONTRACT_TYPE_LIST];
+  }
+};
 
 const loadApprovalTasks = async () => {
   loading.value = true;
@@ -442,6 +465,15 @@ const getStatusText = (status: string) => {
     rejected: "已拒绝",
   };
   return textMap[status] || status;
+};
+
+const getContractTypeLabel = (code?: string) => {
+  const typeCode = String(code || "").trim();
+  if (!typeCode) {
+    return "-";
+  }
+  const matched = contractTypeList.value.find((item) => item.code === typeCode);
+  return matched?.name || typeCode;
 };
 </script>
 

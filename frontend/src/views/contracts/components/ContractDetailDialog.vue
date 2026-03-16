@@ -20,7 +20,7 @@
             contractDetail?.contractName
           }}</el-descriptions-item>
           <el-descriptions-item label="合同类型">{{
-            contractDetail?.contractType
+            getContractTypeLabel(contractDetail?.contractType)
           }}</el-descriptions-item>
           <el-descriptions-item label="合同金额(含税)"
             >¥{{
@@ -40,7 +40,7 @@
               formatAmount(contractDetail?.amountWithoutTax || 0)
             }}</el-descriptions-item
           >
-          <el-descriptions-item label="开始日期">{{
+          <el-descriptions-item label="签署日期">{{
             contractDetail?.startDate
           }}</el-descriptions-item>
           <el-descriptions-item label="结束日期">{{
@@ -142,13 +142,16 @@ import { ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import {
   downloadContractAttachment,
+  getContractTypes,
   getContractAttachments,
   getContractApprovalRecords,
   getContractById,
   submitForApproval,
   type ContractApprovalRecord,
   type ContractAttachment,
+  type ContractTypeItem,
 } from "@/api/contract";
+import { DEFAULT_CONTRACT_TYPE_LIST } from "@/constants/contract";
 import { extractErrorMessage } from "@/utils/error";
 
 interface ContractDetail {
@@ -239,13 +242,17 @@ const contractDetail = ref<ContractDetail | null>(null);
 const participants = ref<Participant[]>([]);
 const attachments = ref<Attachment[]>([]);
 const approvalRecords = ref<ApprovalRecord[]>([]);
+const contractTypeList = ref<ContractTypeItem[]>([
+  ...DEFAULT_CONTRACT_TYPE_LIST,
+]);
 
 // 监听props变化
 watch(
   () => props.modelValue,
-  (val) => {
+  async (val) => {
     visible.value = val;
     if (val && props.contractId) {
+      await loadContractTypeList();
       loadContractDetail();
     }
   },
@@ -301,6 +308,31 @@ const loadContractDetail = async () => {
   } finally {
     loading.value = false;
   }
+};
+
+const loadContractTypeList = async () => {
+  try {
+    const response = await getContractTypes();
+    const records = response.records || response.data?.records || [];
+    if (Array.isArray(records) && records.length > 0) {
+      contractTypeList.value = records;
+      return;
+    }
+  } catch (error) {
+    console.error("加载合同类型失败", error);
+  }
+  if (!contractTypeList.value.length) {
+    contractTypeList.value = [...DEFAULT_CONTRACT_TYPE_LIST];
+  }
+};
+
+const getContractTypeLabel = (code?: string) => {
+  const typeCode = String(code || "").trim();
+  if (!typeCode) {
+    return "-";
+  }
+  const matched = contractTypeList.value.find((item) => item.code === typeCode);
+  return matched?.name || typeCode;
 };
 
 const handleClose = () => {

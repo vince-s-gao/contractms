@@ -33,6 +33,8 @@ public class ContractImportService {
         HEADER_TO_FIELD.put("合同类型", "contractType");
         HEADER_TO_FIELD.put("合同金额", "amount");
         HEADER_TO_FIELD.put("状态", "status");
+        HEADER_TO_FIELD.put("签署日期", "startDate");
+        // 向后兼容旧模板“开始日期”列
         HEADER_TO_FIELD.put("开始日期", "startDate");
         HEADER_TO_FIELD.put("结束日期", "endDate");
         HEADER_TO_FIELD.put("创建人", "createdBy");
@@ -58,7 +60,7 @@ public class ContractImportService {
 
             Map<Integer, String> fieldByColumn = parseHeader(headerRow);
             if (fieldByColumn.isEmpty()) {
-                throw new IllegalArgumentException("无法识别Excel表头，请使用系统模板表头，例如：合同编号、合同名称、客户名称、公司签约主体、合同类型、合同金额、状态、开始日期、结束日期");
+                throw new IllegalArgumentException("无法识别Excel表头，请使用系统模板表头，例如：合同编号、合同名称、客户名称、公司签约主体、合同类型、合同金额、状态、签署日期、结束日期");
             }
 
             List<ImportRow> rows = new ArrayList<>();

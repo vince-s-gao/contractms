@@ -1,51 +1,79 @@
 <template>
   <div class="contracts-container">
     <div class="search-area">
-      <div class="search-fields">
-        <el-input
-          v-model="searchParams.keyword"
-          placeholder="搜索合同名称、编号"
-          prefix-icon="Search"
-          clearable
-        />
-        <el-input
-          v-model="searchParams.customerName"
-          placeholder="客户名称（模糊搜索）"
-          clearable
-        />
-        <el-select
-          v-model="searchParams.signingYears"
-          placeholder="签约年份"
-          clearable
-          multiple
-          collapse-tags
-          collapse-tags-tooltip
-        >
-          <el-option
-            v-for="year in signingYearOptions"
-            :key="year"
-            :label="String(year)"
-            :value="year"
+      <div class="search-head">
+        <div class="search-fields">
+          <el-input
+            v-model="searchParams.keyword"
+            placeholder="搜索合同名称、编号"
+            prefix-icon="Search"
+            clearable
           />
-        </el-select>
-        <el-select
-          v-model="searchParams.contractType"
-          placeholder="合同类型"
-          clearable
-        >
-          <el-option
-            v-for="item in contractTypeOptions"
-            :key="item.value"
-            :label="item.label"
-            :value="item.value"
+          <el-input
+            v-model="searchParams.customerName"
+            placeholder="客户名称（模糊搜索）"
+            clearable
           />
-        </el-select>
-      </div>
-      <div class="search-actions">
-        <el-button type="primary" @click="handleSearch">
+          <el-select
+            v-model="searchParams.signingYears"
+            placeholder="签约年份"
+            clearable
+            multiple
+            collapse-tags
+            collapse-tags-tooltip
+          >
+            <el-option
+              v-for="year in signingYearOptions"
+              :key="year"
+              :label="String(year)"
+              :value="year"
+            />
+          </el-select>
+          <el-select
+            v-model="searchParams.contractType"
+            placeholder="合同类型"
+            clearable
+          >
+            <el-option
+              v-for="item in contractTypeOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
+          <div class="date-filter-group">
+            <el-date-picker
+              v-model="searchParams.signingStartDate"
+              class="single-date-field"
+              type="date"
+              value-format="YYYY-MM-DD"
+              placeholder="签署日期"
+              :disabled-date="disableStartDate"
+              :editable="false"
+              clearable
+              @change="handleSigningStartDateChange"
+            />
+            <span class="date-separator">至</span>
+            <el-date-picker
+              v-model="searchParams.signingEndDate"
+              class="single-date-field"
+              type="date"
+              value-format="YYYY-MM-DD"
+              placeholder="签署结束日期"
+              :disabled-date="disableEndDate"
+              :editable="false"
+              :disabled="!searchParams.signingStartDate"
+              clearable
+              @change="handleSigningEndDateChange"
+            />
+          </div>
+        </div>
+        <el-button class="search-trigger" type="primary" @click="handleSearch">
           <el-icon><Search /></el-icon>
           搜索
         </el-button>
+      </div>
+      <div class="search-actions">
         <el-button @click="handleReset">重置</el-button>
         <el-button type="warning" plain @click="handleOpenImport">
           批量上传
@@ -132,7 +160,7 @@
         </el-table-column>
         <el-table-column
           prop="startDate"
-          label="开始日期"
+          label="签署日期"
           width="120"
           sortable="custom"
         />
@@ -286,7 +314,7 @@
         <template #tip>
           <div class="el-upload__tip">
             支持
-            .xlsx/.xls，表头建议使用：合同编号、合同名称、合同类型、合同金额、状态、开始日期、结束日期
+            .xlsx/.xls，表头建议使用：合同编号、合同名称、合同类型、合同金额、状态、签署日期、结束日期
           </div>
         </template>
       </el-upload>
@@ -342,6 +370,8 @@ interface SearchParams {
   customerName: string;
   contractType: string;
   signingYears: number[];
+  signingStartDate: string;
+  signingEndDate: string;
 }
 
 interface Pagination {
@@ -377,6 +407,8 @@ const searchParams = reactive<SearchParams>({
   customerName: "",
   contractType: "",
   signingYears: [],
+  signingStartDate: "",
+  signingEndDate: "",
 });
 const signingYearOptions = ref<number[]>([]);
 const pagination = reactive<Pagination>({
@@ -437,7 +469,7 @@ const exportFieldOptions: ExportFieldOption[] = [
   { label: "合同类型", value: "contractType" },
   { label: "合同金额", value: "amount" },
   { label: "状态", value: "status" },
-  { label: "开始日期", value: "startDate" },
+  { label: "签署日期", value: "startDate" },
   { label: "结束日期", value: "endDate" },
 ];
 const selectedExportFields = ref<string[]>(
@@ -496,6 +528,12 @@ const loadContractList = async () => {
     if (searchParams.signingYears.length > 0) {
       params.signingYears = searchParams.signingYears.join(",");
     }
+    if (searchParams.signingStartDate) {
+      params.startDate = searchParams.signingStartDate;
+    }
+    if (searchParams.signingEndDate) {
+      params.endDate = searchParams.signingEndDate;
+    }
     if (sortState.prop && sortState.order) {
       params.sortBy = sortState.prop;
       params.sortOrder = sortState.order === "ascending" ? "asc" : "desc";
@@ -522,6 +560,8 @@ const handleReset = () => {
   searchParams.customerName = "";
   searchParams.contractType = "";
   searchParams.signingYears = [];
+  searchParams.signingStartDate = "";
+  searchParams.signingEndDate = "";
   sortState.prop = "";
   sortState.order = "";
   pagination.current = 1;
@@ -642,6 +682,12 @@ const handleExportConfirm = async () => {
     }
     if (searchParams.signingYears.length > 0) {
       params.signingYears = searchParams.signingYears.join(",");
+    }
+    if (searchParams.signingStartDate) {
+      params.startDate = searchParams.signingStartDate;
+    }
+    if (searchParams.signingEndDate) {
+      params.endDate = searchParams.signingEndDate;
     }
     const response = await exportContracts(params);
     const blob = new Blob([response.data], {
@@ -895,6 +941,54 @@ const formatAmount = (amount: number) => {
     maximumFractionDigits: 2,
   });
 };
+
+const disableStartDate = (date: Date) => {
+  if (!searchParams.signingEndDate) {
+    return false;
+  }
+  const endTime = new Date(`${searchParams.signingEndDate}T00:00:00`).getTime();
+  return date.getTime() > endTime;
+};
+
+const disableEndDate = (date: Date) => {
+  if (!searchParams.signingStartDate) {
+    return false;
+  }
+  const startTime = new Date(
+    `${searchParams.signingStartDate}T00:00:00`,
+  ).getTime();
+  return date.getTime() < startTime;
+};
+
+const handleSigningStartDateChange = () => {
+  if (!searchParams.signingStartDate) {
+    searchParams.signingEndDate = "";
+    return;
+  }
+  if (
+    searchParams.signingEndDate &&
+    searchParams.signingEndDate < searchParams.signingStartDate
+  ) {
+    searchParams.signingEndDate = "";
+    ElMessage.warning("签署结束日期不能早于签署日期，已清空结束日期");
+  }
+};
+
+const handleSigningEndDateChange = () => {
+  if (!searchParams.signingEndDate) {
+    return;
+  }
+  if (!searchParams.signingStartDate) {
+    ElMessage.warning("请先选择签署日期");
+    searchParams.signingEndDate = "";
+    return;
+  }
+  if (searchParams.signingEndDate < searchParams.signingStartDate) {
+    ElMessage.warning("签署结束日期不能早于签署日期");
+    searchParams.signingEndDate = "";
+    return;
+  }
+};
 </script>
 
 <style lang="scss" scoped>
@@ -912,11 +1006,40 @@ const formatAmount = (amount: number) => {
   border-radius: 8px;
   padding: 12px;
 
-  .search-fields {
-    display: grid;
-    grid-template-columns: 2fr 1.4fr 1fr 1fr;
+  .search-head {
+    display: flex;
+    align-items: center;
     gap: 10px;
     margin-bottom: 10px;
+  }
+
+  .search-fields {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 2fr 1.4fr 1fr 1fr 2.4fr;
+    gap: 10px;
+  }
+
+  .single-date-field {
+    width: 170px;
+  }
+
+  .date-separator {
+    color: #606266;
+    font-size: 14px;
+    white-space: nowrap;
+  }
+
+  .date-filter-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+  }
+
+  .search-trigger {
+    flex: 0 0 auto;
+    min-width: 84px;
   }
 
   .search-actions {

@@ -2023,7 +2023,7 @@ public class ContractController {
             params.add(startDate);
         }
         if (!isBlank(endDate)) {
-            sql.append(" AND c.end_date <= ?");
+            sql.append(" AND c.start_date <= ?");
             params.add(endDate);
         }
 
