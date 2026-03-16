@@ -27,7 +27,11 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="签约年份">
-              <el-input :model-value="signingYearPreview" disabled placeholder="将从合同编号自动提取" />
+              <el-input
+                :model-value="signingYearPreview"
+                disabled
+                placeholder="将从合同编号自动提取"
+              />
             </el-form-item>
           </el-col>
         </el-row>
@@ -204,7 +208,10 @@
 
       <!-- 附件上传 -->
       <el-card header="附件" class="mt-20">
-        <div v-if="isEdit && existingAttachments.length > 0" class="existing-attachments">
+        <div
+          v-if="isEdit && existingAttachments.length > 0"
+          class="existing-attachments"
+        >
           <div class="attachments-title">已上传附件</div>
           <div
             v-for="file in existingAttachments"
@@ -338,7 +345,9 @@ const formRef = ref<FormInstance>();
 const fileList = ref<UploadFile[]>([]);
 const existingAttachments = ref<ContractAttachment[]>([]);
 const deletingAttachmentId = ref<number | null>(null);
-const contractTypeOptions = ref<ContractTypeItem[]>([...DEFAULT_CONTRACT_TYPE_LIST]);
+const contractTypeOptions = ref<ContractTypeItem[]>([
+  ...DEFAULT_CONTRACT_TYPE_LIST,
+]);
 
 const isEdit = computed(() => !!props.contractData);
 const formTitle = computed(() => (isEdit.value ? "编辑合同" : "新建合同"));
@@ -364,8 +373,8 @@ const formatCurrency = (value: number) =>
     maximumFractionDigits: 2,
   })}`;
 const formattedTaxAmount = computed(() => formatCurrency(taxAmount.value));
-const formattedAmountWithoutTax = computed(
-  () => formatCurrency(amountWithoutTax.value),
+const formattedAmountWithoutTax = computed(() =>
+  formatCurrency(amountWithoutTax.value),
 );
 
 const formData = reactive<ContractFormData>({
@@ -454,7 +463,9 @@ const applyContractData = (source: ContractFormSourceData) => {
   });
   if (
     formData.contractType &&
-    !contractTypeOptions.value.some((item) => item.code === formData.contractType)
+    !contractTypeOptions.value.some(
+      (item) => item.code === formData.contractType,
+    )
   ) {
     contractTypeOptions.value.push({
       code: formData.contractType,
@@ -471,7 +482,9 @@ const loadContractData = async () => {
   const contractId = props.contractData.id;
   if (contractId !== undefined && contractId !== null) {
     try {
-      const detail = (await getContractById(String(contractId))) as ContractFormSourceData;
+      const detail = (await getContractById(
+        String(contractId),
+      )) as ContractFormSourceData;
       applyContractData({
         ...props.contractData,
         ...detail,
@@ -648,7 +661,12 @@ const handleSubmit = async () => {
     handleClose();
   } catch (error) {
     console.error("合同操作失败:", error);
-    ElMessage.error(extractErrorMessage(error, isEdit.value ? "合同更新失败" : "合同创建失败"));
+    ElMessage.error(
+      extractErrorMessage(
+        error,
+        isEdit.value ? "合同更新失败" : "合同创建失败",
+      ),
+    );
   } finally {
     loading.value = false;
   }

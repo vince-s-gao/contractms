@@ -11,6 +11,7 @@ import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.UncategorizedSQLException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -1208,14 +1209,34 @@ public class ContractController {
             return ResponseEntity.badRequest().body(Map.of("message", "新的合同类型编码已存在"));
         }
 
-        if (!oldCode.equals(newCode)) {
-            List<String> updatedCodes = new ArrayList<>();
-            for (String item : enumCodes) {
-                updatedCodes.add(item.equals(oldCode) ? newCode : item);
+        try {
+            if (!oldCode.equals(newCode)) {
+                boolean enumColumn = isContractTypeEnumColumn();
+                if (enumColumn) {
+                    // 先放行新编码，避免旧编码数据在迁移前触发 ENUM 约束错误
+                    List<String> expandedCodes = new ArrayList<>(enumCodes);
+                    expandedCodes.add(newCode);
+                    updateContractTypeEnum(expandedCodes);
+                }
+
+                jdbcTemplate.update("UPDATE contracts SET contract_type = ? WHERE contract_type = ?", newCode, oldCode);
+
+                if (enumColumn) {
+                    // 数据迁移后再移除旧编码，保持 ENUM 列定义与实际类型一致
+                    List<String> finalCodes = new ArrayList<>();
+                    for (String item : enumCodes) {
+                        finalCodes.add(item.equals(oldCode) ? newCode : item);
+                    }
+                    updateContractTypeEnum(finalCodes);
+                }
+
+                jdbcTemplate.update("DELETE FROM contract_type_meta WHERE type_code = ?", oldCode);
             }
-            updateContractTypeEnum(updatedCodes);
-            jdbcTemplate.update("UPDATE contracts SET contract_type = ? WHERE contract_type = ?", newCode, oldCode);
-            jdbcTemplate.update("DELETE FROM contract_type_meta WHERE type_code = ?", oldCode);
+        } catch (IllegalArgumentException | UncategorizedSQLException ex) {
+            operationLogService.log(authentication, "UPDATE_TYPE", "CONTRACT",
+                    "更新合同类型失败 oldCode=" + oldCode + ", newCode=" + newCode,
+                    "FAILED", ex.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("message", "更新合同类型失败，请检查编码后重试"));
         }
 
         upsertContractTypeMeta(newCode, newName);
@@ -1674,7 +1695,17 @@ public class ContractController {
             updatedCodes.add(code);
             updateContractTypeEnum(updatedCodes);
         }
-        upsertContractTypeMeta(code, defaultContractTypeName(code));
+        String existingName = jdbcTemplate.query("""
+                        SELECT type_name
+                        FROM contract_type_meta
+                        WHERE type_code = ?
+                        LIMIT 1
+                        """,
+                rs -> rs.next() ? rs.getString("type_name") : null,
+                code);
+        if (isBlank(existingName)) {
+            upsertContractTypeMeta(code, defaultContractTypeName(code));
+        }
     }
 
     private static String normalizeContractTypeCode(String code) {

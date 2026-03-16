@@ -23,7 +23,7 @@
               v-model="row.roleId"
               placeholder="请选择角色"
               style="width: 180px"
-              @change="(roleId:number) => handleAssignRole(row.id, roleId)"
+              @change="(roleId: number) => handleAssignRole(row.id, roleId)"
             >
               <el-option
                 v-for="role in roleList"
@@ -37,7 +37,11 @@
         <el-table-column label="操作" width="120">
           <template #default="{ row }">
             <el-button
-              v-if="isAdminUser && row.username !== 'admin' && row.username !== currentUsername"
+              v-if="
+                isAdminUser &&
+                row.username !== 'admin' &&
+                row.username !== currentUsername
+              "
               link
               type="danger"
               @click="handleDeleteUser(row)"
@@ -65,8 +69,12 @@
         <el-table-column prop="description" label="描述" min-width="220" />
         <el-table-column label="操作" width="180" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openRoleDialog(row)">编辑</el-button>
-            <el-button link type="danger" @click="handleDeleteRole(row)">删除</el-button>
+            <el-button link type="primary" @click="openRoleDialog(row)"
+              >编辑</el-button
+            >
+            <el-button link type="danger" @click="handleDeleteRole(row)"
+              >删除</el-button
+            >
           </template>
         </el-table-column>
       </el-table>
@@ -88,13 +96,23 @@
           style="width: 160px"
           @keyup.enter="loadOperationLogs"
         />
-        <el-select v-model="logFilters.module" placeholder="模块" clearable style="width: 140px">
+        <el-select
+          v-model="logFilters.module"
+          placeholder="模块"
+          clearable
+          style="width: 140px"
+        >
           <el-option label="认证" value="AUTH" />
           <el-option label="合同" value="CONTRACT" />
           <el-option label="权限" value="PERMISSION" />
           <el-option label="日志" value="OPERATION_LOG" />
         </el-select>
-        <el-select v-model="logFilters.status" placeholder="状态" clearable style="width: 120px">
+        <el-select
+          v-model="logFilters.status"
+          placeholder="状态"
+          clearable
+          style="width: 120px"
+        >
           <el-option label="成功" value="SUCCESS" />
           <el-option label="失败" value="FAILED" />
         </el-select>
@@ -106,11 +124,23 @@
         <el-table-column prop="operationTime" label="时间" min-width="160" />
         <el-table-column prop="username" label="用户" min-width="120" />
         <el-table-column prop="module" label="模块" min-width="120" />
-        <el-table-column prop="operationType" label="操作类型" min-width="140" />
-        <el-table-column prop="description" label="描述" min-width="320" show-overflow-tooltip />
+        <el-table-column
+          prop="operationType"
+          label="操作类型"
+          min-width="140"
+        />
+        <el-table-column
+          prop="description"
+          label="描述"
+          min-width="320"
+          show-overflow-tooltip
+        />
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
-            <el-tag :type="row.status === 'SUCCESS' ? 'success' : 'danger'" size="small">
+            <el-tag
+              :type="row.status === 'SUCCESS' ? 'success' : 'danger'"
+              size="small"
+            >
               {{ row.status === "SUCCESS" ? "成功" : "失败" }}
             </el-tag>
           </template>
@@ -170,7 +200,11 @@
       </el-form>
       <template #footer>
         <el-button @click="roleDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saveRoleLoading" @click="handleSaveRole">
+        <el-button
+          type="primary"
+          :loading="saveRoleLoading"
+          @click="handleSaveRole"
+        >
           保存
         </el-button>
       </template>

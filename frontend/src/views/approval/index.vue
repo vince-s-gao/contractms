@@ -40,7 +40,11 @@
         <el-table :data="approvalRecords" stripe>
           <el-table-column prop="approvalTime" label="时间" width="180" />
           <el-table-column prop="contractNo" label="合同编号" width="160" />
-          <el-table-column prop="contractName" label="合同名称" min-width="240" />
+          <el-table-column
+            prop="contractName"
+            label="合同名称"
+            min-width="240"
+          />
           <el-table-column prop="approver" label="审批人" width="120" />
           <el-table-column label="审批结果" width="100">
             <template #default="{ row }">
@@ -49,7 +53,12 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="comment" label="审批意见" min-width="220" show-overflow-tooltip />
+          <el-table-column
+            prop="comment"
+            label="审批意见"
+            min-width="220"
+            show-overflow-tooltip
+          />
         </el-table>
       </el-card>
     </div>
@@ -284,7 +293,9 @@ const loadApprovalTasks = async () => {
       contractName: item.contractName || "",
       contractType: item.contractType || "",
       amount: Number(item.amount || 0),
-      status: String(item.status || item.approvalStatus || "pending").toLowerCase(),
+      status: String(
+        item.status || item.approvalStatus || "pending",
+      ).toLowerCase(),
       applicant: item.applicantName || "未知申请人",
       applyTime: item.createdAt || "",
       createdAt: item.createdAt || "",
@@ -362,7 +373,9 @@ const handleViewApprovalDetail = async (task: ApprovalTask) => {
   approvalDetailLoading.value = true;
   try {
     const data = await getContractApprovalRecords(task.contractId);
-    const records = (data.records || data.data?.records || []) as ContractApprovalRecord[];
+    const records = (data.records ||
+      data.data?.records ||
+      []) as ContractApprovalRecord[];
     approvalDetailRecords.value = records.map((item) => ({
       id: item.id,
       approver: item.approver || "系统",
@@ -379,16 +392,24 @@ const handleViewApprovalDetail = async (task: ApprovalTask) => {
   }
 };
 
-const handleApprovalSuccess = (payload: { contractId: string; approved: boolean }) => {
+const handleApprovalSuccess = (payload: {
+  contractId: string;
+  approved: boolean;
+}) => {
   approvalDialogVisible.value = false;
   const nextStatus = payload.approved ? "approved" : "rejected";
   if (filterParams.type === "pending") {
     approvalTasks.value = approvalTasks.value.filter(
-      (task) => task.contractId !== payload.contractId && task.id !== payload.contractId,
+      (task) =>
+        task.contractId !== payload.contractId &&
+        task.id !== payload.contractId,
     );
   } else {
     approvalTasks.value = approvalTasks.value.map((task) => {
-      if (task.contractId === payload.contractId || task.id === payload.contractId) {
+      if (
+        task.contractId === payload.contractId ||
+        task.id === payload.contractId
+      ) {
         return { ...task, status: nextStatus };
       }
       return task;

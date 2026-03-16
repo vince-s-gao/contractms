@@ -58,7 +58,9 @@
         <el-card shadow="hover">
           <div class="metric">
             <div class="label">销售收入</div>
-            <div class="value income">{{ formatCurrency(metrics.salesRevenue) }}</div>
+            <div class="value income">
+              {{ formatCurrency(metrics.salesRevenue) }}
+            </div>
           </div>
         </el-card>
       </el-col>
@@ -66,7 +68,9 @@
         <el-card shadow="hover">
           <div class="metric">
             <div class="label">采购费用</div>
-            <div class="value expense">{{ formatCurrency(metrics.purchaseCost) }}</div>
+            <div class="value expense">
+              {{ formatCurrency(metrics.purchaseCost) }}
+            </div>
           </div>
         </el-card>
       </el-col>
@@ -78,7 +82,10 @@
       </template>
       <div v-if="contractTypeStats.length" class="type-pie-wrap">
         <div class="type-pie-chart">
-          <svg :viewBox="`0 0 ${pieViewWidth} ${pieViewHeight}`" class="pie-svg">
+          <svg
+            :viewBox="`0 0 ${pieViewWidth} ${pieViewHeight}`"
+            class="pie-svg"
+          >
             <circle
               :cx="pieCenterX"
               :cy="pieCenterY"
@@ -118,14 +125,21 @@
                 :stroke="segment.color"
                 stroke-width="1.2"
               />
-              <circle :cx="segment.lineStartX" :cy="segment.lineStartY" r="2" :fill="segment.color" />
+              <circle
+                :cx="segment.lineStartX"
+                :cy="segment.lineStartY"
+                r="2"
+                :fill="segment.color"
+              />
               <text
                 :x="segment.textX"
                 :y="segment.textY"
                 :text-anchor="segment.textAnchor"
                 class="pie-label-text"
               >
-                {{ segment.name }} {{ segment.count }}份（{{ segment.percentText }}）
+                {{ segment.name }} {{ segment.count }}份（{{
+                  segment.percentText
+                }}）
               </text>
             </g>
           </svg>
@@ -138,7 +152,11 @@
       <template #header>
         <div class="customer-header">
           <span>客户收入贡献（销售合同）</span>
-          <span class="customer-top5">Top5客户收入占比：{{ formatPercent(top5CustomerRevenueShare) }}</span>
+          <span class="customer-top5"
+            >Top5客户收入占比：{{
+              formatPercent(top5CustomerRevenueShare)
+            }}</span
+          >
         </div>
       </template>
       <el-table :data="topCustomerRevenue" stripe size="small" max-height="420">
@@ -185,7 +203,16 @@ const metrics = reactive({
 const contractTypeStats = ref<ContractOverviewItem[]>([]);
 const topCustomerRevenue = ref<TopCustomerRevenueItem[]>([]);
 const top5CustomerRevenueShare = ref(0);
-const pieColors = ["#409EFF", "#67C23A", "#E6A23C", "#F56C6C", "#8E44AD", "#16A085", "#34495E", "#D35400"];
+const pieColors = [
+  "#409EFF",
+  "#67C23A",
+  "#E6A23C",
+  "#F56C6C",
+  "#8E44AD",
+  "#16A085",
+  "#34495E",
+  "#D35400",
+];
 const pieViewWidth = 560;
 const pieViewHeight = 300;
 const pieCenterX = 280;
@@ -194,7 +221,10 @@ const pieRadius = 52;
 const pieStrokeWidth = 24;
 const pieCircumference = 2 * Math.PI * pieRadius;
 const pieTotal = computed(() =>
-  contractTypeStats.value.reduce((sum, item) => sum + Number(item.count || 0), 0),
+  contractTypeStats.value.reduce(
+    (sum, item) => sum + Number(item.count || 0),
+    0,
+  ),
 );
 const pieSegments = computed(() => {
   let offset = 0;
@@ -222,7 +252,10 @@ const pieSegments = computed(() => {
       preferredY: 0,
       isRight: true,
     };
-    const midRatio = pieCircumference === 0 ? 0 : (segment.offset + segment.length / 2) / pieCircumference;
+    const midRatio =
+      pieCircumference === 0
+        ? 0
+        : (segment.offset + segment.length / 2) / pieCircumference;
     const angle = -Math.PI / 2 + Math.PI * 2 * midRatio;
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);

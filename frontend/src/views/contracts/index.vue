@@ -91,8 +91,18 @@
           sortable="custom"
           header-cell-class-name="sort-inline"
         />
-        <el-table-column prop="contractName" label="合同名称" min-width="200" sortable="custom" />
-        <el-table-column prop="customerName" label="客户名称" min-width="160" sortable="custom" />
+        <el-table-column
+          prop="contractName"
+          label="合同名称"
+          min-width="200"
+          sortable="custom"
+        />
+        <el-table-column
+          prop="customerName"
+          label="客户名称"
+          min-width="160"
+          sortable="custom"
+        />
         <el-table-column
           prop="companySignatory"
           label="公司签约主体"
@@ -110,13 +120,28 @@
             <el-tag>{{ getContractTypeLabel(row.contractType) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="amount" label="合同金额" width="120" sortable="custom">
+        <el-table-column
+          prop="amount"
+          label="合同金额"
+          width="120"
+          sortable="custom"
+        >
           <template #default="{ row }">
             ¥{{ formatAmount(row.amount) }}
           </template>
         </el-table-column>
-        <el-table-column prop="startDate" label="开始日期" width="120" sortable="custom" />
-        <el-table-column prop="endDate" label="结束日期" width="120" sortable="custom" />
+        <el-table-column
+          prop="startDate"
+          label="开始日期"
+          width="120"
+          sortable="custom"
+        />
+        <el-table-column
+          prop="endDate"
+          label="结束日期"
+          width="120"
+          sortable="custom"
+        />
         <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="handleView(row)"
@@ -181,11 +206,20 @@
           :disabled="!!editingTypeCode"
           placeholder="类型编码（如：RENTAL）"
         />
-        <el-input v-model="typeForm.name" placeholder="类型名称（如：租赁合同）" />
-        <el-button type="primary" :loading="typeManageLoading" @click="handleSaveType">
+        <el-input
+          v-model="typeForm.name"
+          placeholder="类型名称（如：租赁合同）"
+        />
+        <el-button
+          type="primary"
+          :loading="typeManageLoading"
+          @click="handleSaveType"
+        >
           {{ editingTypeCode ? "保存修改" : "新增类型" }}
         </el-button>
-        <el-button v-if="editingTypeCode" @click="resetTypeForm">取消编辑</el-button>
+        <el-button v-if="editingTypeCode" @click="resetTypeForm"
+          >取消编辑</el-button
+        >
       </div>
 
       <el-table :data="contractTypeList" border>
@@ -193,8 +227,12 @@
         <el-table-column prop="name" label="类型名称" min-width="180" />
         <el-table-column label="操作" width="160">
           <template #default="{ row }">
-            <el-button link type="primary" @click="handleEditType(row)">编辑</el-button>
-            <el-button link type="danger" @click="handleDeleteType(row)">删除</el-button>
+            <el-button link type="primary" @click="handleEditType(row)"
+              >编辑</el-button
+            >
+            <el-button link type="danger" @click="handleDeleteType(row)"
+              >删除</el-button
+            >
           </template>
         </el-table-column>
       </el-table>
@@ -206,7 +244,10 @@
       width="540px"
       :close-on-click-modal="false"
     >
-      <el-checkbox-group v-model="selectedExportFields" class="export-field-group">
+      <el-checkbox-group
+        v-model="selectedExportFields"
+        class="export-field-group"
+      >
         <el-checkbox
           v-for="field in exportFieldOptions"
           :key="field.value"
@@ -217,7 +258,11 @@
       </el-checkbox-group>
       <template #footer>
         <el-button @click="exportDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="exportLoading" @click="handleExportConfirm">
+        <el-button
+          type="primary"
+          :loading="exportLoading"
+          @click="handleExportConfirm"
+        >
           导出 Excel
         </el-button>
       </template>
@@ -240,7 +285,8 @@
         <el-button type="primary">选择Excel文件</el-button>
         <template #tip>
           <div class="el-upload__tip">
-            支持 .xlsx/.xls，表头建议使用：合同编号、合同名称、合同类型、合同金额、状态、开始日期、结束日期
+            支持
+            .xlsx/.xls，表头建议使用：合同编号、合同名称、合同类型、合同金额、状态、开始日期、结束日期
           </div>
         </template>
       </el-upload>
@@ -251,7 +297,11 @@
 
       <template #footer>
         <el-button @click="importDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="importLoading" @click="handleImportConfirm">
+        <el-button
+          type="primary"
+          :loading="importLoading"
+          @click="handleImportConfirm"
+        >
           开始上传
         </el-button>
       </template>
@@ -261,7 +311,12 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed } from "vue";
-import { ElMessage, ElMessageBox, type UploadFile, type UploadRawFile } from "element-plus";
+import {
+  ElMessage,
+  ElMessageBox,
+  type UploadFile,
+  type UploadRawFile,
+} from "element-plus";
 import { useUserStore } from "@/stores/user";
 import {
   deleteContract,
@@ -348,7 +403,9 @@ const importFileList = ref<UploadFile[]>([]);
 const importRawFile = ref<UploadRawFile | null>(null);
 const typeManageDialogVisible = ref(false);
 const typeManageLoading = ref(false);
-const contractTypeList = ref<ContractTypeItem[]>([...DEFAULT_CONTRACT_TYPE_LIST]);
+const contractTypeList = ref<ContractTypeItem[]>([
+  ...DEFAULT_CONTRACT_TYPE_LIST,
+]);
 const editingTypeCode = ref("");
 const typeForm = reactive<ContractTypeForm>({
   code: "",
@@ -363,11 +420,13 @@ const contractTypeOptions = computed(() =>
 const userStore = useUserStore();
 const isAdminUser = computed(() => {
   const role = String(userStore.userInfo?.role || "").toUpperCase();
-  return role === "SUPER_ADMIN"
-    || role === "ROLE_SUPER_ADMIN"
-    || role === "ADMIN"
-    || role === "ROLE_ADMIN"
-    || role === "ROLE_ROLE_ADMIN";
+  return (
+    role === "SUPER_ADMIN" ||
+    role === "ROLE_SUPER_ADMIN" ||
+    role === "ADMIN" ||
+    role === "ROLE_ADMIN" ||
+    role === "ROLE_ROLE_ADMIN"
+  );
 });
 const exportFieldOptions: ExportFieldOption[] = [
   { label: "合同编号", value: "contractNo" },
@@ -529,13 +588,15 @@ const readBlobText = async (blob?: Blob) => {
 
 const extractExportErrorMessage = async (error: unknown) => {
   const fallback = "导出失败，请稍后重试";
-  const responseData = (error as {
-    response?: {
-      data?: Blob;
-      status?: number;
-    };
-    message?: string;
-  })?.response?.data;
+  const responseData = (
+    error as {
+      response?: {
+        data?: Blob;
+        status?: number;
+      };
+      message?: string;
+    }
+  )?.response?.data;
 
   const blobText = await readBlobText(responseData);
   if (blobText) {
@@ -551,7 +612,8 @@ const extractExportErrorMessage = async (error: unknown) => {
     }
   }
 
-  const status = (error as { response?: { status?: number } })?.response?.status;
+  const status = (error as { response?: { status?: number } })?.response
+    ?.status;
   if (status === 403) {
     return "当前账号没有导出权限";
   }
@@ -609,7 +671,10 @@ const handleExportConfirm = async () => {
   }
 };
 
-const handleImportFileChange = (file: UploadFile, uploadFiles: UploadFile[]) => {
+const handleImportFileChange = (
+  file: UploadFile,
+  uploadFiles: UploadFile[],
+) => {
   importFileList.value = uploadFiles.slice(-1);
   importRawFile.value = (file.raw || null) as UploadRawFile | null;
 };
@@ -748,7 +813,9 @@ const handleSaveType = async () => {
     if (!editingTypeCode.value) {
       const refreshed = await loadContractTypeList();
       if (refreshed) {
-        const created = contractTypeList.value.find((item) => item.code === code);
+        const created = contractTypeList.value.find(
+          (item) => item.code === code,
+        );
         if (created) {
           resetTypeForm();
           ElMessage.success("合同类型新增成功");
@@ -828,7 +895,6 @@ const formatAmount = (amount: number) => {
     maximumFractionDigits: 2,
   });
 };
-
 </script>
 
 <style lang="scss" scoped>

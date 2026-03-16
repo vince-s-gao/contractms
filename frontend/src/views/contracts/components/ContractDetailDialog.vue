@@ -93,7 +93,11 @@
             <span class="file-meta"
               >{{ formatFileSize(file.size) }} | {{ file.uploadTime }}</span
             >
-            <el-button link type="primary" size="small" @click="handleDownload(file)"
+            <el-button
+              link
+              type="primary"
+              size="small"
+              @click="handleDownload(file)"
               >下载</el-button
             >
           </div>
@@ -258,7 +262,9 @@ const loadContractDetail = async () => {
   loading.value = true;
 
   try {
-    const data = (await getContractById(props.contractId)) as ContractDetailResponse;
+    const data = (await getContractById(
+      props.contractId,
+    )) as ContractDetailResponse;
     contractDetail.value = {
       id: String(data.id ?? props.contractId),
       contractNumber: data.contractNumber || data.contractNo || "",
@@ -362,7 +368,10 @@ const handleDownload = async (file: Attachment) => {
     return;
   }
   try {
-    const response = await downloadContractAttachment(contractDetail.value.id, file.id);
+    const response = await downloadContractAttachment(
+      contractDetail.value.id,
+      file.id,
+    );
     const blob = new Blob([response.data], {
       type: response.headers["content-type"] || "application/octet-stream",
     });

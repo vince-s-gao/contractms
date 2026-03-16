@@ -45,7 +45,11 @@
           </el-button>
         </el-form-item>
         <el-form-item>
-          <el-button text class="register-link" @click="registerDialogVisible = true">
+          <el-button
+            text
+            class="register-link"
+            @click="registerDialogVisible = true"
+          >
             没有账号？去注册
           </el-button>
         </el-form-item>
@@ -90,7 +94,11 @@
       </el-form>
       <template #footer>
         <el-button @click="registerDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="registerLoading" @click="handleRegister">
+        <el-button
+          type="primary"
+          :loading="registerLoading"
+          @click="handleRegister"
+        >
           注册
         </el-button>
       </template>

@@ -18,7 +18,9 @@ const shouldShowGlobalError = (config?: AxiosRequestConfig) => {
     return true;
   }
   if (typeof headers.get === "function") {
-    return String(headers.get(SILENT_ERROR_HEADER) || "").toLowerCase() !== "true";
+    return (
+      String(headers.get(SILENT_ERROR_HEADER) || "").toLowerCase() !== "true"
+    );
   }
   const direct =
     headers[SILENT_ERROR_HEADER] ?? headers[SILENT_ERROR_HEADER.toLowerCase()];
@@ -27,7 +29,9 @@ const shouldShowGlobalError = (config?: AxiosRequestConfig) => {
 
 const isAuthFreeRequest = (config?: AxiosRequestConfig) => {
   const url = config?.url || "";
-  return AUTH_FREE_PATHS.some((path) => url.endsWith(path) || url.includes(path));
+  return AUTH_FREE_PATHS.some(
+    (path) => url.endsWith(path) || url.includes(path),
+  );
 };
 
 // 创建axios实例
@@ -74,18 +78,32 @@ request.interceptors.response.use(
     }
 
     // 兼容两类后端返回：标准包装结构与直接业务对象
-    if (
-      data?.code === 200 ||
-      data?.success === true ||
-      typeof data?.code === "undefined"
-    ) {
-      return data.data || data;
-    } else {
+    // 注意：业务对象里也可能有 code 字段（例如合同类型编码），不能一概当作状态码处理
+    const hasNumericCode = typeof data?.code === "number";
+    const hasBooleanSuccess = typeof data?.success === "boolean";
+
+    if (hasNumericCode) {
+      if (data.code === 200) {
+        return data.data ?? data;
+      }
       if (shouldShowGlobalError(response.config)) {
         ElMessage.error(data.message || "请求失败");
       }
       return Promise.reject(new Error(data.message || "请求失败"));
     }
+
+    if (hasBooleanSuccess) {
+      if (data.success) {
+        return data.data ?? data;
+      }
+      if (shouldShowGlobalError(response.config)) {
+        ElMessage.error(data.message || "请求失败");
+      }
+      return Promise.reject(new Error(data.message || "请求失败"));
+    }
+
+    // 非标准包装，按业务对象原样返回
+    return data;
   },
   (error) => {
     const { status, data } = error.response || {};
