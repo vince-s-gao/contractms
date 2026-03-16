@@ -101,7 +101,7 @@ public class ContractController {
     }
 
     @GetMapping("/export")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAnyAuthority('contract:write','contract:read')")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAnyAuthority('CONTRACT_EXPORT','contract:write','contract:read')")
     public ResponseEntity<byte[]> exportContracts(@RequestParam(required = false) String fields,
                                                   @RequestParam(required = false) String keyword,
                                                   @RequestParam(required = false) String customerName,
@@ -129,7 +129,7 @@ public class ContractController {
     }
 
     @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAnyAuthority('CONTRACT_BATCH_UPLOAD','contract:write')")
     public ResponseEntity<?> importContracts(@RequestPart("file") MultipartFile file,
                                              @RequestParam(defaultValue = "false") boolean overwrite,
                                              Authentication authentication) {
@@ -265,7 +265,7 @@ public class ContractController {
     }
 
     @PostMapping(value = "/{id}/attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAnyAuthority('FILE_UPLOAD','contract:write')")
     public ResponseEntity<?> uploadAttachments(@PathVariable Long id,
                                                @RequestPart("files") MultipartFile[] files,
                                                @RequestParam(required = false) String description,
@@ -442,7 +442,7 @@ public class ContractController {
     }
 
     @DeleteMapping("/{id}/attachments/{attachmentId}")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAnyAuthority('FILE_DELETE','contract:write')")
     public ResponseEntity<?> deleteAttachment(@PathVariable Long id, @PathVariable Long attachmentId, Authentication authentication) {
         ensureContractAttachmentTable();
         List<Map<String, Object>> rows;
@@ -575,7 +575,7 @@ public class ContractController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAnyAuthority('CONTRACT_CREATE','contract:write')")
     public ResponseEntity<?> create(@RequestBody Map<String, Object> request, Authentication authentication) {
         String contractNo = asString(request.get("contractNo"));
         String contractName = asString(request.get("contractName"));
@@ -635,7 +635,7 @@ public class ContractController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAnyAuthority('CONTRACT_EDIT','contract:write')")
     public ResponseEntity<?> update(@PathVariable Long id, @RequestBody Map<String, Object> request, Authentication authentication) {
         List<Map<String, Object>> existed = jdbcTemplate.queryForList(
                 "SELECT id, contract_no, status FROM contracts WHERE id = ?", id);
@@ -1150,7 +1150,7 @@ public class ContractController {
     }
 
     @PostMapping("/types")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAnyAuthority('CONTRACT_TYPE_MANAGE','contract:write')")
     public ResponseEntity<?> createContractType(@RequestBody Map<String, Object> request, Authentication authentication) {
         ensureContractTypeMetaTable();
         String code = normalizeContractTypeCode(asString(request.get("code")));
@@ -1178,7 +1178,7 @@ public class ContractController {
     }
 
     @PutMapping("/types/{code}")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAnyAuthority('CONTRACT_TYPE_MANAGE','contract:write')")
     public ResponseEntity<?> updateContractType(@PathVariable String code,
                                                 @RequestBody Map<String, Object> request,
                                                 Authentication authentication) {
@@ -1246,7 +1246,7 @@ public class ContractController {
     }
 
     @DeleteMapping("/types/{code}")
-    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAuthority('contract:write')")
+    @PreAuthorize("hasAnyAuthority('ROLE_SUPER_ADMIN','ROLE_ADMIN','ROLE_ROLE_ADMIN','ROLE_CONTRACT_MANAGER') or hasAnyAuthority('CONTRACT_TYPE_MANAGE','contract:write')")
     public ResponseEntity<?> deleteContractType(@PathVariable String code, Authentication authentication) {
         ensureContractTypeMetaTable();
         String typeCode = normalizeContractTypeCode(code);

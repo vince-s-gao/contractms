@@ -33,15 +33,18 @@ VALUES
 ('CONTRACT_EDIT', '编辑合同', 'BUTTON', '/contracts', '编辑合同信息', 5, 7, 'ACTIVE'),
 ('CONTRACT_DELETE', '删除合同', 'BUTTON', '/contracts', '删除合同', 5, 8, 'ACTIVE'),
 ('CONTRACT_APPROVE', '审批合同', 'BUTTON', '/contracts', '审批合同', 5, 9, 'ACTIVE'),
+('CONTRACT_BATCH_UPLOAD', '批量上传合同', 'BUTTON', '/contracts/import', '批量上传合同', 5, 10, 'ACTIVE'),
+('CONTRACT_EXPORT', '导出合同', 'BUTTON', '/contracts/export', '导出合同', 5, 11, 'ACTIVE'),
+('CONTRACT_TYPE_MANAGE', '合同类型管理', 'BUTTON', '/contracts/types', '管理合同类型', 5, 12, 'ACTIVE'),
 
 -- 审批管理权限
-('APPROVAL_VIEW', '查看审批', 'MENU', '/approvals', '查看审批任务', 0, 10, 'ACTIVE'),
-('APPROVAL_PROCESS', '处理审批', 'BUTTON', '/approvals', '处理审批任务', 10, 11, 'ACTIVE'),
+('APPROVAL_VIEW', '查看审批', 'MENU', '/approvals', '查看审批任务', 0, 13, 'ACTIVE'),
+('APPROVAL_PROCESS', '处理审批', 'BUTTON', '/approvals', '处理审批任务', 13, 14, 'ACTIVE'),
 
 -- 文件管理权限
-('FILE_UPLOAD', '文件上传', 'BUTTON', '/files', '上传文件', 0, 12, 'ACTIVE'),
-('FILE_DOWNLOAD', '文件下载', 'BUTTON', '/files', '下载文件', 0, 13, 'ACTIVE'),
-('FILE_DELETE', '文件删除', 'BUTTON', '/files', '删除文件', 0, 14, 'ACTIVE')
+('FILE_UPLOAD', '文件上传', 'BUTTON', '/files', '上传文件', 0, 15, 'ACTIVE'),
+('FILE_DOWNLOAD', '文件下载', 'BUTTON', '/files', '下载文件', 0, 16, 'ACTIVE'),
+('FILE_DELETE', '文件删除', 'BUTTON', '/files', '删除文件', 0, 17, 'ACTIVE')
 ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP;
 
 -- 为用户分配角色
@@ -63,7 +66,7 @@ INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id 
 FROM roles r, permissions p 
 WHERE r.role_code = 'CONTRACT_MANAGER' 
-AND p.permission_code IN ('CONTRACT_VIEW', 'CONTRACT_CREATE', 'CONTRACT_EDIT', 'CONTRACT_DELETE', 'FILE_UPLOAD', 'FILE_DOWNLOAD')
+AND p.permission_code IN ('CONTRACT_VIEW', 'CONTRACT_CREATE', 'CONTRACT_EDIT', 'CONTRACT_DELETE', 'CONTRACT_BATCH_UPLOAD', 'CONTRACT_EXPORT', 'CONTRACT_TYPE_MANAGE', 'FILE_UPLOAD', 'FILE_DOWNLOAD')
 ON DUPLICATE KEY UPDATE created_at = CURRENT_TIMESTAMP;
 
 -- 为审批管理员分配审批相关权限

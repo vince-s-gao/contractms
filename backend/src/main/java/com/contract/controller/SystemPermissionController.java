@@ -8,6 +8,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @RestController
@@ -242,6 +243,7 @@ public class SystemPermissionController {
     @GetMapping("/permissions")
     public ResponseEntity<?> getPermissions(Authentication authentication) {
         List<Map<String, Object>> records;
+        boolean loadedFromDb = false;
         if (tableExists("permissions")) {
             records = jdbcTemplate.queryForList("""
                     SELECT permission_code AS code,
@@ -251,12 +253,15 @@ public class SystemPermissionController {
                     WHERE COALESCE(status, 'ACTIVE') IN ('ACTIVE', '1')
                     ORDER BY permission_code ASC
                     """);
+            loadedFromDb = true;
         } else {
             records = new ArrayList<>();
         }
         if (records.isEmpty()) {
             records = defaultPermissions();
         }
+        records = mergeBuiltinPermissions(records, loadedFromDb);
+        records = normalizePermissionRecords(records, loadedFromDb);
         operationLogService.log(authentication, "QUERY", "PERMISSION", "查询权限列表", "SUCCESS", null);
         return ResponseEntity.ok(Map.of("records", records, "total", records.size()));
     }
@@ -326,15 +331,200 @@ public class SystemPermissionController {
     }
 
     private static List<Map<String, Object>> defaultPermissions() {
-        return List.of(
-                Map.of("code", "dashboard:view", "name", "查看仪表板", "module", "dashboard"),
-                Map.of("code", "contract:view", "name", "查看合同", "module", "contract"),
-                Map.of("code", "contract:add", "name", "新增合同", "module", "contract"),
-                Map.of("code", "contract:edit", "name", "编辑合同", "module", "contract"),
-                Map.of("code", "contract:delete", "name", "删除合同", "module", "contract"),
-                Map.of("code", "contract:approval", "name", "合同审批", "module", "approval"),
-                Map.of("code", "system:permission", "name", "权限管理", "module", "system")
-        );
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map<String, Object> seed : builtinPermissionSeeds()) {
+            result.add(Map.of(
+                    "code", seed.get("code"),
+                    "name", seed.get("name"),
+                    "module", seed.get("module")
+            ));
+        }
+        return result;
+    }
+
+    private List<Map<String, Object>> mergeBuiltinPermissions(List<Map<String, Object>> records, boolean loadedFromDb) {
+        LinkedHashMap<String, Map<String, Object>> merged = new LinkedHashMap<>();
+        for (Map<String, Object> row : records) {
+            String code = normalizePermissionCode(asString(row.get("code")));
+            if (isBlank(code)) {
+                continue;
+            }
+            LinkedHashMap<String, Object> copy = new LinkedHashMap<>();
+            copy.put("code", code);
+            copy.put("name", asString(row.get("name")));
+            copy.put("module", asString(row.get("module")));
+            merged.put(code, copy);
+        }
+
+        for (Map<String, Object> seed : builtinPermissionSeeds()) {
+            String code = asString(seed.get("code"));
+            if (!merged.containsKey(code)) {
+                merged.put(code, new LinkedHashMap<>(Map.of(
+                        "code", code,
+                        "name", seed.get("name"),
+                        "module", seed.get("module")
+                )));
+                if (loadedFromDb) {
+                    insertPermissionSeed(seed);
+                }
+            }
+        }
+        return new ArrayList<>(merged.values());
+    }
+
+    private void insertPermissionSeed(Map<String, Object> seed) {
+        String code = asString(seed.get("code"));
+        String name = asString(seed.get("name"));
+        String module = asString(seed.get("module"));
+        String path = asString(seed.get("path"));
+        String desc = asString(seed.get("description"));
+        int sortOrder = asInt(seed.get("sortOrder"));
+        if (isBlank(code) || isBlank(name)) {
+            return;
+        }
+        try {
+            jdbcTemplate.update("""
+                            INSERT INTO permissions (
+                                permission_code, permission_name, resource_type, resource_path,
+                                description, parent_id, sort_order, status
+                            )
+                            SELECT ?, ?, ?, ?, ?, 0, ?, 'ACTIVE'
+                            WHERE NOT EXISTS (
+                                SELECT 1 FROM permissions WHERE permission_code = ?
+                            )
+                            """,
+                    code, name, module, nullable(path), nullable(desc), sortOrder, code);
+        } catch (Exception ignored) {
+            // 忽略历史库结构差异导致的插入失败，接口返回会使用内存合并后的权限列表
+        }
+    }
+
+    private static List<Map<String, Object>> builtinPermissionSeeds() {
+        List<Map<String, Object>> seeds = new ArrayList<>();
+        seeds.add(permissionSeed("USER_VIEW", "查看用户", "MENU", "/users", "查看用户列表", 1));
+        seeds.add(permissionSeed("USER_CREATE", "创建用户", "BUTTON", "/users", "创建新用户", 2));
+        seeds.add(permissionSeed("USER_EDIT", "编辑用户", "BUTTON", "/users", "编辑用户信息", 3));
+        seeds.add(permissionSeed("USER_DELETE", "删除用户", "BUTTON", "/users", "删除用户", 4));
+
+        seeds.add(permissionSeed("CONTRACT_VIEW", "查看合同", "MENU", "/contracts", "查看合同列表", 5));
+        seeds.add(permissionSeed("CONTRACT_CREATE", "新建合同", "BUTTON", "/contracts", "新建合同", 6));
+        seeds.add(permissionSeed("CONTRACT_EDIT", "编辑合同", "BUTTON", "/contracts", "编辑合同信息", 7));
+        seeds.add(permissionSeed("CONTRACT_DELETE", "删除合同", "BUTTON", "/contracts", "删除合同", 8));
+        seeds.add(permissionSeed("CONTRACT_APPROVE", "审批合同", "BUTTON", "/approval", "审批合同", 9));
+        seeds.add(permissionSeed("CONTRACT_BATCH_UPLOAD", "批量上传合同", "BUTTON", "/contracts/import", "批量上传合同", 10));
+        seeds.add(permissionSeed("CONTRACT_EXPORT", "导出合同", "BUTTON", "/contracts/export", "导出合同", 11));
+        seeds.add(permissionSeed("CONTRACT_TYPE_MANAGE", "合同类型管理", "BUTTON", "/contracts/types", "管理合同类型", 12));
+
+        seeds.add(permissionSeed("APPROVAL_VIEW", "查看审批", "MENU", "/approval", "查看审批任务", 13));
+        seeds.add(permissionSeed("APPROVAL_PROCESS", "处理审批", "BUTTON", "/approval", "处理审批任务", 14));
+
+        seeds.add(permissionSeed("FILE_UPLOAD", "文件上传", "BUTTON", "/files", "上传文件", 15));
+        seeds.add(permissionSeed("FILE_DOWNLOAD", "文件下载", "BUTTON", "/files", "下载文件", 16));
+        seeds.add(permissionSeed("FILE_DELETE", "文件删除", "BUTTON", "/files", "删除文件", 17));
+
+        seeds.add(permissionSeed("DASHBOARD:VIEW", "查看仪表板", "MENU", "/dashboard", "查看仪表板", 18));
+        seeds.add(permissionSeed("SYSTEM:PERMISSION", "权限管理", "MENU", "/permissions", "权限管理", 19));
+        return seeds;
+    }
+
+    private static Map<String, Object> permissionSeed(String code, String name, String module, String path, String description, int sortOrder) {
+        LinkedHashMap<String, Object> seed = new LinkedHashMap<>();
+        seed.put("code", code);
+        seed.put("name", name);
+        seed.put("module", module);
+        seed.put("path", path);
+        seed.put("description", description);
+        seed.put("sortOrder", sortOrder);
+        return seed;
+    }
+
+    private static String normalizePermissionCode(String permissionCode) {
+        if (isBlank(permissionCode)) {
+            return null;
+        }
+        return permissionCode.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private List<Map<String, Object>> normalizePermissionRecords(List<Map<String, Object>> records, boolean loadedFromDb) {
+        List<Map<String, Object>> normalized = new ArrayList<>();
+        for (Map<String, Object> row : records) {
+            String code = asString(row.get("code"));
+            String rawName = asString(row.get("name"));
+            String module = asString(row.get("module"));
+
+            String fixedName = normalizePermissionName(code, rawName);
+            LinkedHashMap<String, Object> fixedRow = new LinkedHashMap<>();
+            fixedRow.put("code", code);
+            fixedRow.put("name", fixedName);
+            fixedRow.put("module", isBlank(module) ? "" : module);
+            normalized.add(fixedRow);
+
+            if (loadedFromDb && !isBlank(code) && !Objects.equals(rawName, fixedName)) {
+                jdbcTemplate.update("UPDATE permissions SET permission_name = ? WHERE permission_code = ?", fixedName, code);
+            }
+        }
+        return normalized;
+    }
+
+    private static String normalizePermissionName(String code, String rawName) {
+        if (!isBlank(rawName) && !looksMojibake(rawName)) {
+            return rawName.trim();
+        }
+
+        String decoded = decodeLatin1Utf8(rawName);
+        if (!isBlank(decoded) && !looksMojibake(decoded)) {
+            return decoded;
+        }
+
+        String builtin = normalizedBuiltinPermissionName(code);
+        if (!isBlank(builtin)) {
+            return builtin;
+        }
+
+        if (!isBlank(decoded)) {
+            return decoded;
+        }
+        if (!isBlank(rawName)) {
+            return rawName.trim();
+        }
+        return isBlank(code) ? "未命名权限" : code.trim();
+    }
+
+    private static String decodeLatin1Utf8(String value) {
+        if (isBlank(value)) {
+            return value;
+        }
+        try {
+            return new String(value.getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8).trim();
+        } catch (Exception ignored) {
+            return value.trim();
+        }
+    }
+
+    private static String normalizedBuiltinPermissionName(String permissionCode) {
+        String code = isBlank(permissionCode) ? "" : permissionCode.trim().toUpperCase(Locale.ROOT);
+        return switch (code) {
+            case "APPROVAL_PROCESS", "CONTRACT:APPROVAL" -> "处理审批";
+            case "APPROVAL_VIEW" -> "查看审批";
+            case "CONTRACT_APPROVE" -> "审批合同";
+            case "CONTRACT_CREATE", "CONTRACT:ADD" -> "创建合同";
+            case "CONTRACT_BATCH_UPLOAD", "CONTRACT:IMPORT" -> "批量上传合同";
+            case "CONTRACT_EXPORT", "CONTRACT:EXPORT" -> "导出合同";
+            case "CONTRACT_TYPE_MANAGE", "CONTRACT:TYPE_MANAGE" -> "合同类型管理";
+            case "CONTRACT_DELETE", "CONTRACT:DELETE" -> "删除合同";
+            case "CONTRACT_EDIT", "CONTRACT:EDIT" -> "编辑合同";
+            case "CONTRACT_VIEW", "CONTRACT:VIEW" -> "查看合同";
+            case "FILE_DELETE" -> "文件删除";
+            case "FILE_DOWNLOAD" -> "文件下载";
+            case "FILE_UPLOAD" -> "文件上传";
+            case "USER_CREATE", "USER:WRITE" -> "创建用户";
+            case "USER_DELETE" -> "删除用户";
+            case "USER_EDIT" -> "编辑用户";
+            case "USER_VIEW", "USER:READ" -> "查看用户";
+            case "SYSTEM:PERMISSION" -> "权限管理";
+            case "DASHBOARD:VIEW" -> "查看仪表板";
+            default -> null;
+        };
     }
 
     private static String mapRoleCodeToUserEnum(String roleCode) {
@@ -407,6 +597,20 @@ public class SystemPermissionController {
             return Long.parseLong(value.toString());
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    private static int asInt(Object value) {
+        if (value == null) {
+            return 0;
+        }
+        if (value instanceof Number n) {
+            return n.intValue();
+        }
+        try {
+            return Integer.parseInt(value.toString());
+        } catch (Exception e) {
+            return 0;
         }
     }
 
