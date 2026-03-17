@@ -1,5 +1,26 @@
 import { createRouter, createWebHistory } from "vue-router";
 import type { RouteRecordRaw } from "vue-router";
+import { useUserStore } from "@/stores/user";
+
+const dashboardPermissions = ["DASHBOARD:VIEW"];
+const contractPermissions = [
+  "CONTRACT_VIEW",
+  "CONTRACT_CREATE",
+  "CONTRACT_EDIT",
+  "CONTRACT_DELETE",
+  "CONTRACT_BATCH_UPLOAD",
+  "CONTRACT_EXPORT",
+  "CONTRACT_TYPE_MANAGE",
+  "contract:read",
+  "contract:write",
+];
+const approvalPermissions = [
+  "APPROVAL_VIEW",
+  "APPROVAL_PROCESS",
+  "CONTRACT_APPROVE",
+  "contract:approval",
+];
+const permissionManagePermissions = ["SYSTEM:PERMISSION", "system:permission"];
 
 // 路由配置
 const routes: RouteRecordRaw[] = [
@@ -21,6 +42,7 @@ const routes: RouteRecordRaw[] = [
         meta: {
           title: "仪表板",
           requiresAuth: true,
+          permissions: dashboardPermissions,
         },
       },
       {
@@ -30,6 +52,7 @@ const routes: RouteRecordRaw[] = [
         meta: {
           title: "合同管理",
           requiresAuth: true,
+          permissions: contractPermissions,
         },
       },
       {
@@ -39,6 +62,7 @@ const routes: RouteRecordRaw[] = [
         meta: {
           title: "合同审批",
           requiresAuth: true,
+          permissions: approvalPermissions,
         },
       },
       {
@@ -48,6 +72,7 @@ const routes: RouteRecordRaw[] = [
         meta: {
           title: "权限管理",
           requiresAuth: true,
+          permissions: permissionManagePermissions,
         },
       },
     ],
@@ -76,8 +101,27 @@ const router = createRouter({
   routes,
 });
 
+const resolveFirstAuthorizedPath = (userStore: ReturnType<typeof useUserStore>): string => {
+  if (userStore.hasAnyPermission(contractPermissions)) {
+    return "/contracts";
+  }
+  if (userStore.hasAnyPermission(approvalPermissions)) {
+    return "/approval";
+  }
+  if (userStore.hasAnyPermission(permissionManagePermissions)) {
+    return "/permissions";
+  }
+  if (userStore.hasAnyPermission(dashboardPermissions)) {
+    return "/dashboard";
+  }
+  return "/login";
+};
+
 // 路由守卫
 router.beforeEach((to, from, next) => {
+  const userStore = useUserStore();
+  userStore.loadUserInfoFromStorage();
+
   // 设置页面标题
   if (to.meta.title) {
     document.title = `${to.meta.title} - 合同管理系统`;
@@ -88,9 +132,22 @@ router.beforeEach((to, from, next) => {
     sessionStorage.getItem("token") || localStorage.getItem("token");
   if (to.meta.requiresAuth && !token) {
     next("/login");
-  } else {
-    next();
+    return;
   }
+
+  const requiredPermissions = Array.isArray(to.meta.permissions)
+    ? (to.meta.permissions as string[])
+    : [];
+  if (requiredPermissions.length > 0 && !userStore.hasAnyPermission(requiredPermissions)) {
+    const targetPath = resolveFirstAuthorizedPath(userStore);
+    if (targetPath === "/login") {
+      userStore.clearUserInfo();
+    }
+    next(targetPath);
+    return;
+  }
+
+  next();
 });
 
 export default router;
