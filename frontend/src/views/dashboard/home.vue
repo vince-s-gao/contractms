@@ -107,8 +107,18 @@
               :transform="`rotate(-90 ${pieCenterX} ${pieCenterY})`"
               :stroke-dasharray="`${segment.length} ${pieCircumference - segment.length}`"
               :stroke-dashoffset="`-${segment.offset}`"
+              class="pie-segment"
+              @click="handleContractTypeSegmentClick(segment)"
             />
-            <g v-for="segment in pieSegments" :key="`${segment.code}-label`">
+            <g
+              v-for="segment in pieSegments"
+              :key="`${segment.code}-label`"
+              class="pie-label-group"
+              tabindex="0"
+              @click="handleContractTypeSegmentClick(segment)"
+              @keydown.enter.prevent="handleContractTypeSegmentClick(segment)"
+              @keydown.space.prevent="handleContractTypeSegmentClick(segment)"
+            >
               <line
                 :x1="segment.lineStartX"
                 :y1="segment.lineStartY"
@@ -185,6 +195,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
+import { useRouter } from "vue-router";
 import {
   getContractOverview,
   type ContractOverviewItem,
@@ -192,6 +203,7 @@ import {
 } from "@/api/contract";
 import { extractErrorMessage } from "@/utils/error";
 
+const router = useRouter();
 const metrics = reactive({
   totalContracts: 0,
   approvingContracts: 0,
@@ -318,6 +330,28 @@ const yearOptions = computed(() => {
   }
   return Array.from(years).sort((a, b) => b - a);
 });
+
+const handleContractTypeSegmentClick = async (segment: {
+  code: string;
+  name: string;
+}) => {
+  const contractType = String(segment.code || "").trim();
+  if (!contractType) {
+    return;
+  }
+  const query: Record<string, string> = {
+    source: "dashboard-type-distribution",
+    contractType,
+    contractTypeName: String(segment.name || "").trim(),
+  };
+  if (selectedYear.value) {
+    query.signingYears = String(selectedYear.value);
+  }
+  await router.push({
+    path: "/contracts",
+    query,
+  });
+};
 
 const loadOverview = async () => {
   try {
@@ -450,6 +484,20 @@ const formatPercent = (value: number) => {
   .pie-label-text {
     fill: #606266;
     font-size: 12px;
+  }
+
+  .pie-segment {
+    cursor: pointer;
+    transition: opacity 0.2s ease;
+
+    &:hover {
+      opacity: 0.82;
+    }
+  }
+
+  .pie-label-group {
+    cursor: pointer;
+    outline: none;
   }
 }
 </style>

@@ -359,6 +359,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed } from "vue";
+import { useRoute } from "vue-router";
 import {
   ElMessage,
   ElMessageBox,
@@ -469,6 +470,7 @@ const contractTypeOptions = computed(() =>
     value: item.code,
   })),
 );
+const route = useRoute();
 const userStore = useUserStore();
 const isAdminUser = computed(() => {
   const role = String(userStore.userInfo?.role || "").toUpperCase();
@@ -534,10 +536,105 @@ const selectedExportFields = ref<string[]>(
   exportFieldOptions.map((item) => item.value),
 );
 
-onMounted(() => {
-  loadContractTypeList();
-  loadSigningYearOptions();
-  loadContractList();
+const parseSingleQueryValue = (value: unknown): string => {
+  if (Array.isArray(value)) {
+    return String(value[0] ?? "").trim();
+  }
+  return value == null ? "" : String(value).trim();
+};
+
+const parseSigningYearsFromQuery = (value: unknown): number[] => {
+  const rawList = Array.isArray(value)
+    ? value.map((item) => String(item ?? ""))
+    : [String(value ?? "")];
+  const years = new Set<number>();
+  for (const item of rawList) {
+    const pieces = item.split(",");
+    for (const piece of pieces) {
+      const year = Number(piece.trim());
+      if (Number.isInteger(year) && year > 0) {
+        years.add(year);
+      }
+    }
+  }
+  return Array.from(years);
+};
+
+const resolveContractTypeFromQuery = (
+  contractTypeCode: string,
+  contractTypeName: string,
+): string => {
+  if (
+    contractTypeCode &&
+    contractTypeList.value.some((item) => item.code === contractTypeCode)
+  ) {
+    return contractTypeCode;
+  }
+  if (contractTypeName) {
+    const matched = contractTypeList.value.find(
+      (item) => item.name === contractTypeName,
+    );
+    if (matched) {
+      return matched.code;
+    }
+  }
+  return contractTypeCode || "";
+};
+
+const applyRouteQueryFilters = () => {
+  const keyword = parseSingleQueryValue(route.query.keyword);
+  if (keyword) {
+    searchParams.keyword = keyword;
+  }
+
+  const customerName = parseSingleQueryValue(route.query.customerName);
+  if (customerName) {
+    searchParams.customerName = customerName;
+  }
+
+  const contractTypeCode = parseSingleQueryValue(route.query.contractType);
+  const contractTypeName = parseSingleQueryValue(route.query.contractTypeName);
+  if (contractTypeCode || contractTypeName) {
+    searchParams.contractType = resolveContractTypeFromQuery(
+      contractTypeCode,
+      contractTypeName,
+    );
+  }
+
+  const signingYearsRaw = route.query.signingYears ?? route.query.signingYear;
+  const signingYears = parseSigningYearsFromQuery(signingYearsRaw);
+  if (signingYears.length > 0) {
+    searchParams.signingYears = signingYears;
+  }
+
+  const signingStartDate = parseSingleQueryValue(
+    route.query.startDate ?? route.query.signingStartDate,
+  );
+  if (signingStartDate) {
+    searchParams.signingStartDate = signingStartDate;
+  }
+
+  const signingEndDate = parseSingleQueryValue(
+    route.query.endDate ?? route.query.signingEndDate,
+  );
+  if (signingEndDate) {
+    searchParams.signingEndDate = signingEndDate;
+  }
+
+  if (
+    searchParams.signingStartDate &&
+    searchParams.signingEndDate &&
+    searchParams.signingEndDate < searchParams.signingStartDate
+  ) {
+    searchParams.signingEndDate = "";
+  }
+};
+
+onMounted(async () => {
+  await loadContractTypeList();
+  await loadSigningYearOptions();
+  applyRouteQueryFilters();
+  await loadContractList();
 });
 
 const loadContractTypeList = async () => {
